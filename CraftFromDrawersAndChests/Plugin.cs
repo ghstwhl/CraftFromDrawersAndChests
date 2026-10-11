@@ -32,9 +32,10 @@ namespace CraftFromDrawersAndChests
 
         /// <summary>
         /// The plugin's logger, forwarded from <see cref="BaseUnityPlugin.Logger"/>. It is a
-        /// forwarding property rather than a field so that <see cref="Awake"/> stays limited to
-        /// exactly three actions (assign <see cref="Instance"/>, create <see cref="Harmony"/>,
-        /// run <c>PatchAll</c>).
+        /// forwarding property rather than a field so that <see cref="Awake"/> holds only the
+        /// fixed start-up sequence — assign <see cref="Instance"/>, create <see cref="Harmony"/>,
+        /// initialise and read the configuration, then run <c>PatchAll</c> — and carries no
+        /// logging plumbing of its own.
         /// </summary>
         internal static ManualLogSource Log => Instance.Logger;
 

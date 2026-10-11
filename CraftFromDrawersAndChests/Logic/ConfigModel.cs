@@ -4,7 +4,7 @@ namespace CraftFromDrawersAndChests.Logic
 {
     /// <summary>
     /// The single source of truth for the BepInEx configuration surface: the section names,
-    /// the user-visible key names, and the defaults the game-facing <c>Config</c> layer binds.
+    /// the user-visible key names, and the defaults the game-facing <c>PluginConfig</c> layer binds.
     /// Pure logic, so it must never reference <c>BepInEx.Configuration</c>; the
     /// <c>ConfigEntry</c> wiring (Task 8) lives in the game-facing layer and reads these
     /// constants rather than writing string literals of its own.

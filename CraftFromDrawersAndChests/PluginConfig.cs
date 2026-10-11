@@ -1,6 +1,7 @@
 using BepInEx.Configuration;
 using CraftFromDrawersAndChests.Logic;
 using Jotunn.Managers;
+using Jotunn.Utils;
 using UnityEngine;
 
 namespace CraftFromDrawersAndChests
@@ -17,7 +18,9 @@ namespace CraftFromDrawersAndChests
     /// with Jötunn's <see cref="SynchronizationManager"/>, and each is marked admin-only, which is
     /// what makes their values server-authoritative: the server's copy is pushed to every client
     /// and the entries are locked for non-admins. <see cref="ReadInto"/> is the only writer of
-    /// <see cref="FeatureFlags"/> and runs from <c>Plugin.Awake</c> before any patch is applied.
+    /// <see cref="FeatureFlags"/>; it runs from <c>Plugin.Awake</c> before any patch is applied
+    /// and again from the <see cref="SynchronizationManager.OnConfigurationSynchronized"/> handler,
+    /// so the snapshot tracks the values Jötunn has just written into the entries.
     /// </remarks>
     public static class PluginConfig
     {
@@ -140,12 +143,19 @@ namespace CraftFromDrawersAndChests
             isDebug = Bind(config, ConfigModel.SectionDebug, ConfigModel.IsDebug, true,
                 "Print debug messages to the log.");
 
+            // Jötunn writes the server's values into these entries after Init has run and then
+            // raises this event. Re-reading the snapshot there is what actually makes the values
+            // server-authoritative; without it a client would keep its own local file's values.
+            // Wired before the registration call so the refresh stays in place independently of it.
+            SynchronizationManager.OnConfigurationSynchronized += RefreshFlags;
+
             SynchronizationManager.Instance.RegisterCustomConfig(config);
         }
 
         /// <summary>
         /// Copies every entry's current value into <paramref name="flags"/>. The only writer of a
-        /// <see cref="FeatureFlags"/> instance; called from <c>Plugin.Awake</c> before any patch.
+        /// <see cref="FeatureFlags"/> instance; called from <c>Plugin.Awake</c> before any patch,
+        /// and again from <see cref="RefreshFlags"/> whenever Jötunn replaces the entries' values.
         /// The two flash colours are intentionally not copied — they are presentation values
         /// exposed through <see cref="FlashColor"/> and <see cref="UnFlashColor"/> instead.
         /// </summary>
@@ -182,6 +192,18 @@ namespace CraftFromDrawersAndChests
             flags.IgnorePrivateChests = ignorePrivateChests.Value;
             flags.IgnoreBlackMetalChests = ignoreBlackMetalChests.Value;
             flags.IgnoreReinforcedChests = ignoreReinforcedChests.Value;
+        }
+
+        /// <summary>
+        /// Jötunn's handler for the configuration-synchronised event. By the time it fires the
+        /// entries hold the server's values — the initial push on connect, or a later change — so
+        /// re-reading them into <see cref="Flags"/> is what makes the snapshot server-authoritative.
+        /// <see cref="Flags"/> is created in <see cref="Init"/> and every property is assigned
+        /// synchronously here, so a patch can never observe it null or half-populated.
+        /// </summary>
+        private static void RefreshFlags(object sender, ConfigurationSynchronizationEventArgs e)
+        {
+            ReadInto(Flags);
         }
 
         /// <summary>

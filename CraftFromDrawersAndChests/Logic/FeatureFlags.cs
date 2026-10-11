@@ -2,13 +2,13 @@ namespace CraftFromDrawersAndChests.Logic
 {
     /// <summary>
     /// A resolved snapshot of every configuration setting, filled in from BepInEx
-    /// <c>ConfigEntry</c> values by the game-facing <c>Config</c> layer (Task 8). Deliberately a
+    /// <c>ConfigEntry</c> values by the game-facing <c>PluginConfig</c> layer (Task 8). Deliberately a
     /// plain mutable class with one property per setting and no BepInEx types, so the pure logic
     /// can consume it and the tests can run outside the game. The defaults live in
     /// <see cref="ConfigModel"/>; this type is populated by the config layer, not defaulted here.
     /// </summary>
     /// <remarks>
-    /// Single writer: <c>Config.ReadInto</c> (Task 8) is the only code that assigns to these
+    /// Single writer: <c>PluginConfig.ReadInto</c> (Task 8) is the only code that assigns to these
     /// properties, and it runs from <c>Plugin.Awake</c> before any Harmony patch is applied, so
     /// every patch observes a fully populated snapshot. Because the type is deliberately
     /// non-defaulted, a consumer that skipped that read would see every flag false; consumers must
