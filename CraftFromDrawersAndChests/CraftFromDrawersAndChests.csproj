@@ -122,6 +122,7 @@
     <Compile Include="Logic\DrawerContract.cs" />
     <Compile Include="Logic\DrawerStock.cs" />
     <Compile Include="Logic\DrawerTake.cs" />
+    <Compile Include="Logic\DestinationCapacity.cs" />
     <Compile Include="Logic\Eligibility.cs" />
     <Compile Include="Logic\FeatureFlags.cs" />
     <Compile Include="Logic\Geometry.cs" />

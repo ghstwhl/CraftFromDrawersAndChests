@@ -164,11 +164,14 @@ namespace CraftFromDrawersAndChests.Storage
         /// requested, or zero — or <see cref="ChestTake.Deferred"/> (<c>-1</c>) when a removal was
         /// <b>routed</b> to another player and the count is not knowable synchronously. The sentinel is
         /// returned whenever <i>any</i> removal in the loop is routed, regardless of how much was
-        /// already delivered before it: the loop asks each removal for the whole un-returned remainder
-        /// (<c>amount - delivered</c>), so a routed request covers exactly that remainder and
-        /// <c>delivered + routed == requested</c>. Report the sentinel even after some items are already
-        /// in hand — the caller treats it as the line being satisfied, which is exactly right, and it
-        /// never retries. Returning the delivered count instead would make the caller retry for a
+        /// already delivered before it. The loop asks each removal for the whole un-returned remainder
+        /// (<c>amount - delivered</c>), so a routed request <b>asks</b> for that whole remainder — but
+        /// MultiUserChest clamps the amount it actually routes to <c>min(request, located stack,
+        /// destination free space)</c>, so <c>delivered + routed == requested</c> is <b>not</b> an
+        /// unconditional invariant and can under-cover when the located stack or the destination is
+        /// short. The caller's behaviour is unaffected: report the sentinel even after some items are
+        /// already in hand — the caller treats it as the line being satisfied, which is exactly right,
+        /// and it never retries. Returning the delivered count instead would make the caller retry for a
         /// remainder that is already in flight, requesting it a second time. <c>-1</c> is not a failure
         /// and must not be retried, because the items do still leave the chest and will arrive later.
         /// A caller that needs a definite count must check <see cref="CanTakeSynchronously"/> first.

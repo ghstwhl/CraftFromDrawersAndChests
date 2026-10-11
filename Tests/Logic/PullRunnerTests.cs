@@ -79,8 +79,14 @@ namespace CraftFromDrawersAndChests.Tests.Logic
         }
 
         [Test]
-        public void ShapeDeferred_AfterAPartialDelivery_IsStillSatisfied()
+        public void RunnerToleratesASentinelArrivingAfterAShortAnswer()
         {
+            // A runner-contract tolerance check, not a description of a reachable source sequence: the
+            // post-round-2 VanillaChestSource returns the sentinel from the very call that routes (it
+            // discards any count already delivered), so a short positive count followed by a sentinel
+            // across separate calls cannot come from that source. What this pins is only the runner's
+            // tolerance: whenever a sentinel arrives — even mid-line, after a partial — the line counts
+            // as satisfied and the sentinel is never retried.
             var lines = new List<PullLine> { Line("0", "Wood", 50) };
             int calls = 0;
 
@@ -114,12 +120,17 @@ namespace CraftFromDrawersAndChests.Tests.Logic
         }
 
         [Test]
-        public void GateAndExecutorAgree_ALineBiggerThanOneStack_IsRetriedAndSecured()
+        public void GateAndSimulatedTakeStep_ALineBiggerThanOneStack_IsRetriedAndSecured()
         {
             // Mirrors the reviewer's Critical from the gate's side: a source holding 2 x 30 (Count 60)
             // passes a 50-item gate (60 >= 50). Its Take can only hand over one stack per call, so the
-            // planner's feasibility (R4) and the executor's outcome must still agree: the executor
-            // retries across stacks (R1/R3) and secures the line the gate promised.
+            // planner's feasibility (R4) and the executor's outcome must still agree.
+            //
+            // The executor here is a hand-written MODEL of the take step (one stack per call), not the
+            // real VanillaChestSource loop: that loop needs a live Container, MultiUserChest and
+            // Inventory, so it cannot be exercised in a pure test project. This pins the planner's
+            // feasibility and the runner's retry contract against the model; a regression inside the
+            // real cross-stack loop would NOT fail this test and must be caught in-game.
             var requests = new[] { new PullRequest("Wood", "Wood", 50, false) };
             var stocks = new[] { new StorageStock("0", "Wood", 60, 0f) };
 

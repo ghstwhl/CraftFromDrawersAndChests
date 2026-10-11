@@ -58,12 +58,16 @@ namespace CraftFromDrawersAndChests.Storage
         /// </para>
         /// <para>
         /// A source fulfils a request in one call, so when a removal inside that call is routed the
-        /// source returns the sentinel <b>whatever</b> was already delivered before it: the routed
-        /// request covers the entire un-returned remainder of the ask, so <c>delivered + routed ==
-        /// requested</c> and the line is settled. A caller must therefore treat a short positive count
-        /// as "ask again for the remainder" and a sentinel as "this line is settled" — never as a
-        /// shortfall to retry, because the remainder is already in flight and a retry would duplicate
-        /// it.
+        /// source returns the sentinel <b>whatever</b> was already delivered before it. The loop asks
+        /// the routed removal for the whole un-returned remainder of the ask, but MultiUserChest clamps
+        /// the routed amount to <c>min(request, located stack, destination free space)</c>, so the
+        /// request covers at most that remainder — <c>delivered + routed == requested</c> is <b>not</b>
+        /// an unconditional invariant and can under-cover when the located stack or the destination is
+        /// short. A caller's behaviour is unaffected: a short positive count still means "ask again for
+        /// the remainder" and a sentinel still means "this line is settled" — never a shortfall to
+        /// retry, because the request is already in flight and a retry would duplicate it. The covered
+        /// amount is the clamped one, so the sentinel means "the rest is on its way", not "the whole
+        /// remainder is on its way".
         /// </para>
         /// </summary>
         /// <param name="itemName">The item's prefab name; see <see cref="Count"/>.</param>
