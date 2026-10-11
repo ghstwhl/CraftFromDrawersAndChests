@@ -163,12 +163,15 @@ namespace CraftFromDrawersAndChests.Storage
         /// The return value is <c>&gt;= 0</c> — the number actually removed, which may be fewer than
         /// requested, or zero — or <see cref="ChestTake.Deferred"/> (<c>-1</c>) when a removal was
         /// <b>routed</b> to another player and the count is not knowable synchronously. The sentinel is
-        /// only returned when <b>nothing at all</b> was delivered: once some items are already in hand,
-        /// the definite count is returned instead, and the routed remainder arrives asynchronously
-        /// (the caller treats the line as satisfied either way). <c>-1</c> is not a failure and must
-        /// not be retried, because the items do still leave the chest and will arrive later, so a
-        /// retry would duplicate them. A caller that needs a definite count must check
-        /// <see cref="CanTakeSynchronously"/> first.
+        /// returned whenever <i>any</i> removal in the loop is routed, regardless of how much was
+        /// already delivered before it: the loop asks each removal for the whole un-returned remainder
+        /// (<c>amount - delivered</c>), so a routed request covers exactly that remainder and
+        /// <c>delivered + routed == requested</c>. Report the sentinel even after some items are already
+        /// in hand — the caller treats it as the line being satisfied, which is exactly right, and it
+        /// never retries. Returning the delivered count instead would make the caller retry for a
+        /// remainder that is already in flight, requesting it a second time. <c>-1</c> is not a failure
+        /// and must not be retried, because the items do still leave the chest and will arrive later.
+        /// A caller that needs a definite count must check <see cref="CanTakeSynchronously"/> first.
         /// </para>
         /// </summary>
         public int Take(string itemName, int amount, Inventory destination)
@@ -193,9 +196,11 @@ namespace CraftFromDrawersAndChests.Storage
 
                 if (taken == ChestTake.Deferred)
                 {
-                    // Routed to another player. Report the sentinel only when nothing was delivered;
-                    // otherwise the items already in hand make the definite count the honest answer.
-                    return delivered > 0 ? delivered : ChestTake.Deferred;
+                    // Routed to another player: the request covers the whole un-returned remainder
+                    // (amount - delivered), so report the sentinel even though some items were already
+                    // delivered. Returning the count instead would make the caller retry for a
+                    // remainder already in flight, and that remainder would leave the chest twice.
+                    return ChestTake.Deferred;
                 }
 
                 if (taken <= 0)

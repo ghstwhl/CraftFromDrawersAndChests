@@ -57,11 +57,13 @@ namespace CraftFromDrawersAndChests.Storage
         /// <c>VanillaChestSource.CanTakeSynchronously</c>).
         /// </para>
         /// <para>
-        /// A source that delivers some items and only <i>then</i> has a further removal routed returns
-        /// the delivered count rather than the sentinel: the sentinel is reserved for a request that
-        /// moved nothing at all, because a count of zero would be indistinguishable from "the storage
-        /// was empty". A caller must therefore treat a short positive count as "ask again for the
-        /// remainder" and a sentinel as "this line is settled".
+        /// A source fulfils a request in one call, so when a removal inside that call is routed the
+        /// source returns the sentinel <b>whatever</b> was already delivered before it: the routed
+        /// request covers the entire un-returned remainder of the ask, so <c>delivered + routed ==
+        /// requested</c> and the line is settled. A caller must therefore treat a short positive count
+        /// as "ask again for the remainder" and a sentinel as "this line is settled" — never as a
+        /// shortfall to retry, because the remainder is already in flight and a retry would duplicate
+        /// it.
         /// </para>
         /// </summary>
         /// <param name="itemName">The item's prefab name; see <see cref="Count"/>.</param>
