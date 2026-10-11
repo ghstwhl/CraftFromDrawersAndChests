@@ -170,6 +170,26 @@ namespace CraftFromDrawersAndChests.Logic
         }
 
         /// <summary>
+        /// Whether a craft evaluated at <paramref name="qualityLevel"/> is an <b>upgrade</b> of an
+        /// existing item rather than a craft that produces new output (Task 13 fix round 5, R10).
+        /// <para>
+        /// The game derives the quality level it hands to <c>Player.HaveRequirements(Recipe, …)</c> the
+        /// same way in every craft path — <c>InventoryGui.OnCraftPressed</c>, <c>UpdateRecipe</c> and
+        /// <c>DoCrafting</c> each compute <c>upgradeItem != null ? upgradeItem.m_quality + 1 : 1</c>. An
+        /// item's quality is never below one, so an upgrade is answered at a quality level of at least
+        /// two while a normal craft is always answered at exactly one: <c>qualityLevel &gt; 1</c> is the
+        /// upgrade condition. Because the <i>caller</i> computed it, the panel gate and the executing
+        /// craft read the same value, so the two agree — unlike a read of
+        /// <c>InventoryGui.m_craftUpgradeItem</c>, which is assigned only in <c>OnCraftPressed</c>, after
+        /// the panel has already decided whether the craft button is clickable.
+        /// </para>
+        /// </summary>
+        public static bool IsUpgrade(int qualityLevel)
+        {
+            return qualityLevel > 1;
+        }
+
+        /// <summary>
         /// How many of the crafted item the destination should reserve room for (Task 13 fix round 4,
         /// R8 and R9), given the recipe's base output <paramref name="baseAmount"/> (<c>Recipe.GetAmount</c>),
         /// the station's per-roll crafting bonus <paramref name="perRollBonus"/>

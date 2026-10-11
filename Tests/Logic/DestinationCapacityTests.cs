@@ -217,6 +217,26 @@ namespace CraftFromDrawersAndChests.Tests.Logic
         }
 
         [Test]
+        public void IsUpgrade_IsTrueAtTheUpgradeQualityLevel()
+        {
+            // OnCraftPressed/UpdateRecipe/DoCrafting all pass upgradeItem.m_quality + 1 for an upgrade,
+            // and an item's quality is at least one, so an upgrade is always evaluated above quality one.
+            Assert.That(DestinationCapacity.IsUpgrade(2), Is.True);
+            Assert.That(DestinationCapacity.IsUpgrade(3), Is.True);
+            Assert.That(DestinationCapacity.IsUpgrade(10), Is.True);
+        }
+
+        [Test]
+        public void IsUpgrade_IsFalseForANormalCraft()
+        {
+            // A craft that produces new output is always evaluated at quality one, and the discovering
+            // path passes zero. Neither is an upgrade, so the output room must still be reserved.
+            Assert.That(DestinationCapacity.IsUpgrade(1), Is.False);
+            Assert.That(DestinationCapacity.IsUpgrade(0), Is.False);
+            Assert.That(DestinationCapacity.IsUpgrade(-1), Is.False);
+        }
+
+        [Test]
         public void CanAccept_DeclinesWhenOnlyTheBaseOutputFitsButNotTheBonus()
         {
             // The free-craft window R8 closes: a matching stack with exactly the base output's room free

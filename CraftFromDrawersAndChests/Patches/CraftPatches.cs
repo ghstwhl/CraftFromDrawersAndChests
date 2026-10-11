@@ -269,9 +269,13 @@ namespace CraftFromDrawersAndChests.Patches
         /// an under-reservation would hand out a free item). Null (no reservation) when the recipe cannot
         /// describe its output, which leaves the shortfall check alone rather than inventing a number.
         /// <para>
-        /// An upgrade (<c>InventoryGui.m_craftUpgradeItem != null</c>) reserves <b>nothing</b>: that path
-        /// removes the item being upgraded and re-adds it at the same position, so it needs no new room,
-        /// and vanilla skips its own output guard there.
+        /// An upgrade reserves <b>nothing</b>: that path removes the item being upgraded and re-adds it
+        /// at the same position, so it needs no new room, and vanilla skips its own output guard there.
+        /// The upgrade is recognised from the craft context the requirement check was made at
+        /// (<see cref="DestinationCapacity.IsUpgrade"/>), which is <c>OnCraftPressed</c>'s own condition
+        /// one step earlier: <c>InventoryGui.m_craftUpgradeItem</c> is only armed when the button is
+        /// pressed, so reading it here would miss the first-press upgrade and reserve room for output
+        /// that is re-added in place.
         /// </para>
         /// </summary>
         private static DestinationCapacity.Delivery? CraftedOutput(Recipe piece, int qualityLevel, int amount)
@@ -285,11 +289,17 @@ namespace CraftFromDrawersAndChests.Patches
 
             int baseAmount = piece.GetAmount(qualityLevel, out int _, out ItemDrop.ItemData _, amount);
 
-            // InventoryGui.instance owns both the upgrade flag and the live per-roll bonus value; the
-            // panel and DoCrafting run against the same instance, so reading them here is what the game
-            // itself will do. A null instance means no craft is in flight, so no bonus can be added.
+            // The upgrade condition is the craft context the caller passed to the requirement check, not
+            // InventoryGui.m_craftUpgradeItem: that field is armed only in OnCraftPressed, i.e. after the
+            // panel gate has already decided whether the craft button is clickable, so on a first press
+            // it is still null. Every craft path derives the quality level it passes from the item being
+            // upgraded (upgradeItem.m_quality + 1, else 1), so the call-site value carries the answer.
+            bool isUpgrade = DestinationCapacity.IsUpgrade(qualityLevel);
+
+            // InventoryGui.instance still owns the live per-roll bonus value; the panel and DoCrafting
+            // run against the same instance, so reading it here is what the game itself will do. A null
+            // instance means no craft is in flight, so no bonus can be added.
             InventoryGui gui = InventoryGui.instance;
-            bool isUpgrade = gui != null && gui.m_craftUpgradeItem != null;
             int perRollBonus = gui != null ? gui.m_craftBonusAmount : 0;
 
             int produced = DestinationCapacity.ReservedOutputAmount(baseAmount, perRollBonus, amount, isUpgrade);
