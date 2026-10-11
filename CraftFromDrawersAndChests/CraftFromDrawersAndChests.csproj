@@ -111,6 +111,7 @@
     <Compile Include="ModInfo.cs" />
     <Compile Include="Plugin.cs" />
     <Compile Include="PluginConfig.cs" />
+    <Compile Include="MultiUserChestBridge.cs" />
     <Compile Include="Logic\ChestTypeRules.cs" />
     <Compile Include="Logic\ConfigModel.cs" />
     <Compile Include="Logic\DrawerContract.cs" />
@@ -132,6 +133,38 @@
     <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+
+  <!--
+    MultiUserChest ships built for .NET Framework 4.7.2 while this project targets 4.6.2, so
+    ResolveAssemblyReference refuses to resolve it (warning MSB3274) and drops it from the
+    compiler's reference set; without it `using MultiUserChest;` would not compile. MSB3274 is a
+    deliberate signal and is left unsuppressed, so instead of changing the target framework or
+    suppressing the warning, the already-staged DLL is added straight back to the compiler's
+    reference list just before CoreCompile.
+
+    Both items are needed. The Roslyn Csc task reads @(ReferencePathWithRefAssemblies), which is
+    snapshotted from @(ReferencePath) by FindReferenceAssembliesForReferences. That target is a
+    dependency of ResolveReferences and has already run by the time this target fires, so appending
+    to @(ReferencePath) alone never reaches the compiler. Adding to the snapshot item as well is
+    what actually lands the DLL in the csc command line; @(ReferencePath) is kept so the reference
+    is still visible to anything that inspects the resolved set.
+
+    Private=false on purpose: at runtime BepInEx loads the real MultiUserChest plugin, so the
+    reference is compile-time only and must not be copied next to this assembly.
+  -->
+  <Target Name="AddMultiUserChestReference"
+          DependsOnTargets="ResolveAssemblyReferences"
+          BeforeTargets="CoreCompile"
+          Condition="Exists('$(ReferencesRoot)\Mods\MultiUserChest.dll')">
+    <ItemGroup>
+      <ReferencePath Include="$(ReferencesRoot)\Mods\MultiUserChest.dll">
+        <Private>false</Private>
+      </ReferencePath>
+      <ReferencePathWithRefAssemblies Include="$(ReferencesRoot)\Mods\MultiUserChest.dll">
+        <Private>false</Private>
+      </ReferencePathWithRefAssemblies>
+    </ItemGroup>
+  </Target>
   <!-- .NET Framework 4.6.2 reference assemblies from NuGet, so no machine-wide targeting pack is required. -->
   <Import Project="..\packages\Microsoft.NETFramework.ReferenceAssemblies.net462.1.0.3\build\Microsoft.NETFramework.ReferenceAssemblies.net462.targets" Condition="Exists('..\packages\Microsoft.NETFramework.ReferenceAssemblies.net462.1.0.3\build\Microsoft.NETFramework.ReferenceAssemblies.net462.targets')" />
   <!--

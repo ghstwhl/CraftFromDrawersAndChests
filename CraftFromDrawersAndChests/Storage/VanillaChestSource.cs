@@ -13,9 +13,10 @@ namespace CraftFromDrawersAndChests.Storage
     /// Values are read live from the container's inventory and its ZDO; nothing here mutates the
     /// container.
     /// <para>
-    /// Removal is deliberately unfinished: chest items may only leave through
-    /// <c>MultiUserChest.ContainerHandler.RemoveItemFromChest</c>, which Task 11 wires up behind
-    /// <c>MultiUserChestBridge</c>. Until then <see cref="Take"/> throws.
+    /// Removal never writes the container's inventory: chest items leave only through
+    /// <c>MultiUserChest.ContainerHandler.RemoveItemFromChest</c>, wrapped by
+    /// <see cref="MultiUserChestBridge.RemoveFromChest"/>. This class reads the inventory to find
+    /// the stack to take and hands it to the bridge.
     /// </para>
     /// <para>
     /// Only public Valheim members are used (<c>GetInventory()</c>, <c>Inventory.GetAllItems()</c>,
@@ -124,17 +125,65 @@ namespace CraftFromDrawersAndChests.Storage
         }
 
         /// <summary>
-        /// Not implemented yet. Removing from a chest must go through MultiUserChest's protocol
-        /// (<c>ContainerHandler.RemoveItemFromChest</c>, wrapped by <c>MultiUserChestBridge</c>),
-        /// which Task 11 adds; writing <c>Container.m_inventory</c> here would desync the chest
-        /// against the player currently managing it. Nothing calls this yet.
+        /// Removes up to <paramref name="amount"/> of the given prefab from the chest and delivers
+        /// them into <paramref name="destination"/>, returning how many were actually removed.
+        /// <para>
+        /// The stack is located the same way <see cref="Count"/> counts it — matched on
+        /// <c>item.m_dropPrefab.name</c>, since storage is keyed by prefab name (Ruling 1). Removal
+        /// itself goes only through <see cref="MultiUserChestBridge.RemoveFromChest"/>: the
+        /// container's inventory is read here to find the stack but never written, because writing it
+        /// would desync the chest against the player MultiUserChest has managing it (Ruling 5).
+        /// </para>
+        /// <para>
+        /// A single call removes from one stack only, because MultiUserChest's protocol is a one-slot
+        /// operation, so the result never exceeds the matched stack's size even when
+        /// <paramref name="amount"/> is larger. See <see cref="FindLargestStack"/> for why the largest
+        /// matching stack is the one chosen.
+        /// </para>
         /// </summary>
         public int Take(string itemName, int amount, Inventory destination)
         {
-            throw new NotImplementedException(
-                "Taking items out of a vanilla chest is not implemented yet: it must be routed " +
-                "through MultiUserChest (MultiUserChestBridge.RemoveFromChest), which Task 11 adds. " +
-                "Container.m_inventory must never be written directly.");
+            if (string.IsNullOrEmpty(itemName) || amount <= 0 || destination == null || !IsValid)
+                return 0;
+
+            Inventory inventory = _container.GetInventory();
+            if (inventory == null)
+                return 0;
+
+            ItemDrop.ItemData item = FindLargestStack(inventory, itemName);
+            if (item == null)
+                return 0;
+
+            return MultiUserChestBridge.RemoveFromChest(_container, item, destination, amount);
+        }
+
+        /// <summary>
+        /// The largest stack of the given prefab in the container, matched exactly as
+        /// <see cref="Count"/> matches: on <c>item.m_dropPrefab.name</c>, never the localized
+        /// <c>m_shared.m_name</c>. The largest stack is chosen so one bridge call removes as much of
+        /// <paramref name="itemName"/> as the chest can give in a single protocol operation; the first
+        /// matching stack would under-deliver whenever an earlier slot holds only part of the request.
+        /// </summary>
+        private static ItemDrop.ItemData FindLargestStack(Inventory inventory, string itemName)
+        {
+            List<ItemDrop.ItemData> items = inventory.GetAllItems();
+            if (items == null)
+                return null;
+
+            ItemDrop.ItemData best = null;
+            for (int i = 0; i < items.Count; i++)
+            {
+                ItemDrop.ItemData item = items[i];
+                if (item == null || item.m_dropPrefab == null)
+                    continue;
+
+                if (!string.Equals(item.m_dropPrefab.name, itemName, StringComparison.Ordinal))
+                    continue;
+
+                if (best == null || item.m_stack > best.m_stack)
+                    best = item;
+            }
+            return best;
         }
 
         /// <summary>True when the container exposes an inventory; a container without one is skipped.</summary>
