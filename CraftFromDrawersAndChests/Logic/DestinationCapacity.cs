@@ -30,6 +30,11 @@ namespace CraftFromDrawersAndChests.Logic
     /// caller reduces the destination to <see cref="DrawerTake.InventoryStack"/>s, counts its empty
     /// slots, and describes each delivery as a <see cref="Delivery"/>.
     /// </para>
+    /// <para>
+    /// It also owns the crafted-output reservation (fix round 4): <see cref="ReservedOutputAmount"/>
+    /// sizes the room the crafted output must be charged — the base output plus the most a
+    /// crafting-skill bonus can add (<see cref="MaxCraftBonus"/>), or nothing at all for an upgrade.
+    /// </para>
     /// </summary>
     public static class DestinationCapacity
     {
@@ -132,6 +137,68 @@ namespace CraftFromDrawersAndChests.Logic
                 }
             }
             return true;
+        }
+
+        /// <summary>
+        /// The most a crafting-skill bonus can add to a craft's output, <b>on top of</b> the recipe's own
+        /// <c>Recipe.GetAmount</c> (Task 13 fix round 4, R8).
+        /// <para>
+        /// <c>InventoryGui.DoCrafting</c> does not add just <c>GetAmount</c>: when the current crafting
+        /// station has a crafting skill and the output stacks higher than one, it rolls
+        /// <paramref name="craftMultiplier"/> times, and every successful roll adds the <b>running</b>
+        /// bonus — the decompiled loop is <c>bonus += m_craftBonusAmount; amount += bonus;</c> — so
+        /// <c>k</c> successes add <c>perRollBonus * (1 + 2 + … + k)</c>. The maximum is therefore every
+        /// roll succeeding: <c>perRollBonus * n * (n + 1) / 2</c> for <c>n = craftMultiplier</c> (the
+        /// amount the craft is being made in). The roll's chance (<c>m_craftBonusChance</c>, default
+        /// 0.25) only decides whether a roll succeeds, so it cannot bound the maximum and is not needed.
+        /// </para>
+        /// <para>
+        /// Reserving this much is the safe direction: over-reserving only declines a marginal craft,
+        /// whereas under-reserving lets the game add an item the gate never charged room for — a free
+        /// item, because vanilla creates the output <i>before</i> it consumes the materials.
+        /// </para>
+        /// </summary>
+        /// <param name="perRollBonus">The per-roll bonus (<c>InventoryGui.m_craftBonusAmount</c>); zero when no bonus can apply.</param>
+        /// <param name="craftMultiplier">How many rolls the game gets, i.e. the craft's amount multiplier.</param>
+        public static int MaxCraftBonus(int perRollBonus, int craftMultiplier)
+        {
+            if (perRollBonus <= 0 || craftMultiplier <= 0)
+                return 0;
+
+            long bonus = (long)perRollBonus * craftMultiplier * (craftMultiplier + 1) / 2;
+            return bonus > int.MaxValue ? int.MaxValue : (int)bonus;
+        }
+
+        /// <summary>
+        /// How many of the crafted item the destination should reserve room for (Task 13 fix round 4,
+        /// R8 and R9), given the recipe's base output <paramref name="baseAmount"/> (<c>Recipe.GetAmount</c>),
+        /// the station's per-roll crafting bonus <paramref name="perRollBonus"/>
+        /// (<c>InventoryGui.m_craftBonusAmount</c>; zero when no bonus can apply) and the craft's
+        /// <paramref name="craftMultiplier"/>.
+        /// <para>
+        /// <b>An upgrade reserves nothing.</b> <c>InventoryGui.DoCrafting</c> is also reached with
+        /// <c>m_craftUpgradeItem != null</c>; that path removes the item being upgraded and re-adds the
+        /// upgraded one at the same grid position (<c>ItemData.m_gridPos</c>), so net slot usage is
+        /// unchanged — and vanilla deliberately skips its own <c>CanAddItem</c> output guard there.
+        /// Reserving output room would therefore decline a legitimate upgrade, so
+        /// <paramref name="isUpgrade"/> short-circuits to zero.
+        /// </para>
+        /// <para>
+        /// Otherwise this is the base output plus <see cref="MaxCraftBonus"/>. A non-positive base asks
+        /// for no room.
+        /// </para>
+        /// </summary>
+        /// <param name="baseAmount">The recipe's own output (<c>Recipe.GetAmount</c>) before any bonus.</param>
+        /// <param name="perRollBonus">The per-roll bonus (<c>InventoryGui.m_craftBonusAmount</c>); zero when no bonus can apply.</param>
+        /// <param name="craftMultiplier">How many rolls the game gets, i.e. the craft's amount multiplier.</param>
+        /// <param name="isUpgrade">Whether the game is reached with <c>m_craftUpgradeItem != null</c>.</param>
+        public static int ReservedOutputAmount(int baseAmount, int perRollBonus, int craftMultiplier, bool isUpgrade)
+        {
+            if (isUpgrade || baseAmount <= 0)
+                return 0;
+
+            long reserved = (long)baseAmount + MaxCraftBonus(perRollBonus, craftMultiplier);
+            return reserved > int.MaxValue ? int.MaxValue : (int)reserved;
         }
 
         /// <summary>

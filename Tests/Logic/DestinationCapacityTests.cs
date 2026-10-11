@@ -167,6 +167,91 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             }
         }
 
+        // ---- The crafted-output reservation (fix round 4: R8 bonus upper bound, R9 upgrades). ----
+
+        [Test]
+        public void MaxCraftBonus_IsTheCumulativeRollMaximum()
+        {
+            // InventoryGui.DoCrafting adds the RUNNING bonus on each successful roll (bonus += amount;
+            // amount += bonus), so n rolls add perRoll * (1 + 2 + ... + n) at most - not perRoll * n.
+            Assert.That(DestinationCapacity.MaxCraftBonus(0, 5), Is.EqualTo(0), "no per-roll bonus");
+            Assert.That(DestinationCapacity.MaxCraftBonus(3, 0), Is.EqualTo(0), "no rolls");
+            Assert.That(DestinationCapacity.MaxCraftBonus(3, -1), Is.EqualTo(0), "negative rolls");
+            Assert.That(DestinationCapacity.MaxCraftBonus(1, 1), Is.EqualTo(1), "1");
+            Assert.That(DestinationCapacity.MaxCraftBonus(1, 3), Is.EqualTo(6), "1 + 2 + 3");
+            Assert.That(DestinationCapacity.MaxCraftBonus(2, 3), Is.EqualTo(12), "2 * (1 + 2 + 3)");
+            Assert.That(DestinationCapacity.MaxCraftBonus(1, 4), Is.EqualTo(10), "1 + 2 + 3 + 4");
+        }
+
+        [Test]
+        public void MaxCraftBonus_NeverUnderestimatesThePerRollBound()
+        {
+            // For the single craft the game normally runs (multiplier 1) the cumulative maximum equals
+            // perRoll; for a multi-craft it is strictly larger, so reserving it never under-reserves.
+            for (int n = 1; n <= 8; n++)
+                Assert.That(DestinationCapacity.MaxCraftBonus(1, n), Is.GreaterThanOrEqualTo(n));
+        }
+
+        [Test]
+        public void ReservedOutputAmount_ChargesBasePlusBonusForANormalCraft()
+        {
+            Assert.That(DestinationCapacity.ReservedOutputAmount(5, 1, 1, false), Is.EqualTo(6));
+            Assert.That(DestinationCapacity.ReservedOutputAmount(5, 2, 2, false), Is.EqualTo(11)); // 5 + 2*(1+2)
+            Assert.That(DestinationCapacity.ReservedOutputAmount(5, 1, 3, false), Is.EqualTo(11)); // 5 + 6
+        }
+
+        [Test]
+        public void ReservedOutputAmount_IsZeroForAnUpgrade()
+        {
+            // R9: an upgrade removes and re-adds the item at its own position, so it needs no new room.
+            Assert.That(DestinationCapacity.ReservedOutputAmount(5, 1, 1, true), Is.EqualTo(0));
+            Assert.That(DestinationCapacity.ReservedOutputAmount(5, 4, 3, true), Is.EqualTo(0));
+            Assert.That(DestinationCapacity.ReservedOutputAmount(100, 1, 10, true), Is.EqualTo(0));
+        }
+
+        [Test]
+        public void ReservedOutputAmount_IsZeroWhenThereIsNothingToPlace()
+        {
+            Assert.That(DestinationCapacity.ReservedOutputAmount(0, 1, 1, false), Is.EqualTo(0));
+            Assert.That(DestinationCapacity.ReservedOutputAmount(-2, 1, 1, false), Is.EqualTo(0));
+        }
+
+        [Test]
+        public void CanAccept_DeclinesWhenOnlyTheBaseOutputFitsButNotTheBonus()
+        {
+            // The free-craft window R8 closes: a matching stack with exactly the base output's room free
+            // (5) and no empty slot. The base output fits, but the reserved amount (base + the bonus a
+            // roll could add = 6) does not, so the gate must decline rather than let the extra spill out
+            // unpaid — vanilla could still add the bonus.
+            var inventory = new[] { Stack("$item_wood", 1, 0, 15, 20) }; // 5 free
+            int reserved = DestinationCapacity.ReservedOutputAmount(5, 1, 1, false);
+            var atBase = new[] { new DestinationCapacity.Delivery("$item_wood", 1, 0, 5, 20) };
+            var atReserved = new[] { new DestinationCapacity.Delivery("$item_wood", 1, 0, reserved, 20) };
+
+            Assert.That(reserved, Is.EqualTo(6));
+            Assert.That(DestinationCapacity.CanAccept(inventory, 0, atBase), Is.True);
+            Assert.That(DestinationCapacity.CanAccept(inventory, 0, atReserved), Is.False);
+        }
+
+        [Test]
+        public void CanAccept_ANormalCraftDeclinesWhereAnUpgradeSucceeds()
+        {
+            // One empty slot and a material shortfall of exactly one stack. A normal craft also needs the
+            // crafted output to fit that slot, so it must decline; an upgrade re-adds the item in place
+            // and reserves no output room, so only the material is charged and it still fits.
+            var empty = new DrawerTake.InventoryStack[0];
+            var material = new DestinationCapacity.Delivery("$item_stone", 1, 0, 20, 20);
+
+            int normalReserved = DestinationCapacity.ReservedOutputAmount(1, 1, 1, false); // 1 + 1
+            int upgradeReserved = DestinationCapacity.ReservedOutputAmount(1, 1, 1, true);  // 0
+
+            var normal = new[] { new DestinationCapacity.Delivery("$item_wood", 1, 0, normalReserved, 20), material };
+            var upgrade = new[] { new DestinationCapacity.Delivery("$item_wood", 1, 0, upgradeReserved, 20), material };
+
+            Assert.That(DestinationCapacity.CanAccept(empty, 1, normal), Is.False);
+            Assert.That(DestinationCapacity.CanAccept(empty, 1, upgrade), Is.True);
+        }
+
         // A faithful model of Inventory.AddItem(ItemData) driven chunk by chunk: merge one item at a
         // time into the first matching (name + quality + world level) stack with room, and when none is
         // found write the whole remainder into ONE empty slot that then joins the matching stacks.

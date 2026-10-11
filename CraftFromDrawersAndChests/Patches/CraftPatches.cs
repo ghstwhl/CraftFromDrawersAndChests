@@ -260,10 +260,19 @@ namespace CraftFromDrawersAndChests.Patches
         /// <summary>
         /// The crafted output as a destination delivery, so the crafting gate charges its room before
         /// the pulled shortfall. A normal craft adds <c>Recipe.m_item</c> at the craft's quality level
-        /// and the current world level, in the amount <c>Recipe.GetAmount</c> reports; that is exactly
-        /// what <c>InventoryGui.DoCrafting</c> does before it calls <c>ConsumeResources</c>. Null (no
-        /// reservation) when the recipe cannot describe its output, which leaves the shortfall check
-        /// alone rather than inventing a number.
+        /// and the current world level, but <b>not</b> in the bare amount <c>Recipe.GetAmount</c> reports:
+        /// <c>InventoryGui.DoCrafting</c> then adds a crafting-skill bonus on top — when the current
+        /// station has a crafting skill and the output stacks higher than one it rolls a number of times
+        /// and every successful roll adds the running bonus. So this reserves
+        /// <see cref="DestinationCapacity.ReservedOutputAmount"/>: the base amount plus the maximum that
+        /// bonus can add (an upper bound, so an over-reservation only declines a marginal craft whereas
+        /// an under-reservation would hand out a free item). Null (no reservation) when the recipe cannot
+        /// describe its output, which leaves the shortfall check alone rather than inventing a number.
+        /// <para>
+        /// An upgrade (<c>InventoryGui.m_craftUpgradeItem != null</c>) reserves <b>nothing</b>: that path
+        /// removes the item being upgraded and re-adds it at the same position, so it needs no new room,
+        /// and vanilla skips its own output guard there.
+        /// </para>
         /// </summary>
         private static DestinationCapacity.Delivery? CraftedOutput(Recipe piece, int qualityLevel, int amount)
         {
@@ -274,7 +283,16 @@ namespace CraftFromDrawersAndChests.Patches
             if (data == null || data.m_shared == null || data.m_shared.m_maxStackSize <= 0)
                 return null;
 
-            int produced = piece.GetAmount(qualityLevel, out int _, out ItemDrop.ItemData _, amount);
+            int baseAmount = piece.GetAmount(qualityLevel, out int _, out ItemDrop.ItemData _, amount);
+
+            // InventoryGui.instance owns both the upgrade flag and the live per-roll bonus value; the
+            // panel and DoCrafting run against the same instance, so reading them here is what the game
+            // itself will do. A null instance means no craft is in flight, so no bonus can be added.
+            InventoryGui gui = InventoryGui.instance;
+            bool isUpgrade = gui != null && gui.m_craftUpgradeItem != null;
+            int perRollBonus = gui != null ? gui.m_craftBonusAmount : 0;
+
+            int produced = DestinationCapacity.ReservedOutputAmount(baseAmount, perRollBonus, amount, isUpgrade);
             if (produced <= 0)
                 return null;
 
