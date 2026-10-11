@@ -84,15 +84,75 @@ namespace CraftFromDrawersAndChests.Pull
         }
 
         /// <summary>
-        /// Turns requirements into the planner's requests, each asking storage for the full amount the
-        /// requirement consumes (<c>GetAmount(qualityLevel) * multiplier</c>). Requirements with no
-        /// resolvable item or a non-positive amount are dropped; an upgrader resource keeps its
-        /// <see cref="PullRequest.IsUpgraderResource"/> flag so the planner can skip it when the
-        /// player is not at an upgrader.
+        /// Turns requirements into the planner's requests, each reduced to the part the player does
+        /// <b>not</b> already hold — the shortfall below <c>GetAmount(qualityLevel) * multiplier</c>.
+        /// The held amount is read from <paramref name="inventory"/> with the same three-part item
+        /// identity the destination model matches on (shared name, <b>quality</b>, world level; see
+        /// <see cref="DrawerTake.MatchingAmount"/>), so a stack counts towards a requirement only when
+        /// it really is the item the requirement names — the two halves of the availability question
+        /// cannot disagree about which stacks are the item. A requirement the player already covers
+        /// produces no request at all.
+        /// <para>
+        /// This is the entry point the crafting and building pulls (and their requirement gates) share.
+        /// It deliberately diverges from CraftFromContainers, which asks storage for the whole
+        /// requirement with no held-subtraction (CFC line 1175, <c>GetAmount(qualityLevel) * multiple</c>)
+        /// and therefore over-pulls; asking only for the shortfall is the safe direction and matches
+        /// this project's own gate, whose whole purpose is that a "yes" means the pull can deliver what
+        /// the action needs.
+        /// </para>
         /// </summary>
-        public static PullRequest[] BuildRequests(Piece.Requirement[] requirements, int qualityLevel, int multiplier)
+        /// <param name="requirements">The recipe's or piece's requirements; may be null.</param>
+        /// <param name="qualityLevel">The quality the requirement is evaluated at (0 or 1 for building).</param>
+        /// <param name="multiplier">How many of the recipe are being made (1 for building).</param>
+        /// <param name="inventory">The player's inventory the held counts are read from; may be null, which reads as "holds none".</param>
+        public static PullRequest[] BuildShortfallRequests(
+            Piece.Requirement[] requirements, int qualityLevel, int multiplier, Inventory inventory)
         {
-            return BuildRequests(requirements, qualityLevel, multiplier, null);
+            IReadOnlyDictionary<string, int> held = HeldCounts(requirements, inventory);
+            return BuildRequests(requirements, qualityLevel, multiplier,
+                name => held.TryGetValue(name, out int amount) ? amount : 0);
+        }
+
+        /// <summary>
+        /// How many of each requirement's item the inventory already holds, keyed by the requirement's
+        /// prefab name (the identifier the requests use). A held stack counts only when it is the same
+        /// item as the requirement names — shared name, quality and world level — the one predicate
+        /// <see cref="DrawerTake.MatchingAmount"/> exposes, so what is counted as held here is exactly
+        /// what would be counted as room for the delivery of that same item. A requirement with no
+        /// resolvable item contributes no entry (it produces no request either), and two requirements
+        /// that share a prefab name share the first entry — the planner keys its stock by that name too.
+        /// The inventory is reduced to the pure stack view at most once, and only if there is a
+        /// requirement whose identity can be read.
+        /// </summary>
+        private static IReadOnlyDictionary<string, int> HeldCounts(
+            Piece.Requirement[] requirements, Inventory inventory)
+        {
+            var held = new Dictionary<string, int>(StringComparer.Ordinal);
+            if (requirements == null || inventory == null)
+                return held;
+
+            List<DrawerTake.InventoryStack> stacks = null;
+            for (int i = 0; i < requirements.Length; i++)
+            {
+                Piece.Requirement requirement = requirements[i];
+                if (requirement == null)
+                    continue;
+
+                string prefab = PrefabName(requirement);
+                if (string.IsNullOrEmpty(prefab) || held.ContainsKey(prefab))
+                    continue;
+
+                ItemDrop.ItemData data = ItemDataOf(requirement);
+                if (data == null || data.m_shared == null || string.IsNullOrEmpty(data.m_shared.m_name))
+                    continue;
+
+                if (stacks == null)
+                    stacks = InventoryStacks(inventory);
+
+                held[prefab] = DrawerTake.MatchingAmount(
+                    data.m_shared.m_name, data.m_quality, data.m_worldLevel, stacks);
+            }
+            return held;
         }
 
         /// <summary>
@@ -140,19 +200,29 @@ namespace CraftFromDrawersAndChests.Pull
         }
 
         /// <summary>
-        /// Plans a pull for <paramref name="requirements"/> against the storage eligible for
-        /// <paramref name="origin"/>, asking storage for the full requirement. The caller supplies
-        /// nothing the player already holds, so this is the "pull the whole recipe" entry point; the
-        /// crafting and building paths instead build shortfall requests and call
-        /// <see cref="Plan(IReadOnlyList{PullRequest}, IReadOnlyList{IStorageSource}, Vec3, FeatureFlags, bool)"/>.
-        /// The upgrader flag is derived from the local player's current crafting station.
+        /// Plans a pull for <paramref name="requirements"/> against the storage eligible for the
+        /// player's position, asking storage only for the shortfall below what the player already
+        /// carries (<see cref="BuildShortfallRequests"/>) — the very notion the crafting and building
+        /// requirement gates use, so a pull can only demand what a "yes" already promised it could
+        /// deliver. The collected sources are returned so the caller can hand the very same list to
+        /// <see cref="Execute"/> and have its plan lines resolve. The upgrader flag is derived from the
+        /// player's current crafting station.
         /// </summary>
+        /// <param name="requirements">The recipe's or piece's requirements; may be null.</param>
+        /// <param name="qualityLevel">The quality the requirement is evaluated at (0 or 1 for building).</param>
+        /// <param name="multiplier">How many of the recipe are being made (1 for building).</param>
+        /// <param name="player">The player whose held materials reduce the request, and whose current station gates upgrader resources; null reads as holding none and at no station.</param>
+        /// <param name="flags">The resolved configuration snapshot.</param>
+        /// <param name="sources">The eligible storage the plan was built against, for <see cref="Execute"/>.</param>
         public static PullPlanResult PlanFor(
-            Piece.Requirement[] requirements, int qualityLevel, int multiplier, Vec3 origin, FeatureFlags flags)
+            Piece.Requirement[] requirements, int qualityLevel, int multiplier,
+            Player player, FeatureFlags flags, out IReadOnlyList<IStorageSource> sources)
         {
-            IReadOnlyList<IStorageSource> sources = Collect(origin, flags);
-            PullRequest[] requests = BuildRequests(requirements, qualityLevel, multiplier);
-            return Plan(requests, sources, origin, flags, AtUpgrader(Player.m_localPlayer));
+            Vec3 origin = OriginOf(player);
+            sources = Collect(origin, flags);
+            Inventory inventory = player != null ? player.GetInventory() : null;
+            PullRequest[] requests = BuildShortfallRequests(requirements, qualityLevel, multiplier, inventory);
+            return Plan(requests, sources, origin, flags, AtUpgrader(player));
         }
 
         /// <summary>
@@ -219,14 +289,19 @@ namespace CraftFromDrawersAndChests.Pull
         }
 
         /// <summary>
-        /// Pulls a recipe's ingredients into <paramref name="player"/>'s own inventory — the
-        /// ctrl-click behaviour: the click becomes a pull instead of a craft. Unlike the crafting and
-        /// building paths, which ask storage only for the <i>shortfall</i>, this asks for the
-        /// <b>whole</b> recipe (see <see cref="PlanFor"/>); the player has expressly asked to fetch
-        /// the ingredients.
+        /// Pulls a recipe's or a building piece's materials into <paramref name="player"/>'s own
+        /// inventory — the "pull that instead of doing it" behaviour. Storage is asked only for the
+        /// <b>shortfall</b> below what the player already carries (see <see cref="PlanFor"/>): the very
+        /// notion the requirement gates use, so a pull can never demand an amount the gate did not
+        /// already promise storage could deliver. Asking for the whole requirement instead — as
+        /// CraftFromContainers does — would over-pull (taking an item the player already holds) and, on
+        /// this codebase's shortfall-based gate, could refuse a pull for materials the player is holding.
         /// <para>
-        /// Returns true only when the pull completed. It returns false, having consumed nothing and
-        /// dropped nothing, when storage cannot cover the requirement <b>or</b> when the player's
+        /// Returns true when the pull completed <b>or</b> when there was nothing to fetch (the player
+        /// already holds every requirement, or there are no requirements at all), in which case
+        /// <paramref name="requested"/> is false so the caller reports nothing — a no-op pull has
+        /// neither a success nor a failure to announce. It returns false, having consumed nothing and
+        /// dropped nothing, when storage cannot cover the shortfall <b>or</b> when the player's
         /// inventory cannot accept everything the pull would deliver. The destination check is what
         /// keeps items off the ground — the design's top anti-goal (Review Focus 2): a pull that moved
         /// items into a full inventory would leave the remainder on the floor, so the whole pull is
@@ -234,30 +309,37 @@ namespace CraftFromDrawersAndChests.Pull
         /// crafting path uses (<see cref="DestinationAllows"/>), so the two cannot disagree.
         /// </para>
         /// </summary>
-        /// <param name="requirements">The recipe's requirements; may be null.</param>
-        /// <param name="qualityLevel">The quality the recipe is evaluated at (an upgrade is &gt; 1).</param>
-        /// <param name="multiplier">How many of the recipe are being pulled (1 unless multicrafting).</param>
+        /// <param name="requirements">The recipe's or piece's requirements; may be null, which has nothing to fetch.</param>
+        /// <param name="qualityLevel">The quality the requirement is evaluated at (an upgrade is &gt; 1, building is 0).</param>
+        /// <param name="multiplier">How many are being pulled (1 unless multicrafting).</param>
         /// <param name="player">The player to deliver into; null refuses.</param>
         /// <param name="flags">The resolved configuration snapshot; null refuses.</param>
+        /// <param name="requested">
+        /// Whether the pull had anything to fetch. False means a no-op pull: nothing moved and there is
+        /// nothing to report, so the caller shows neither the pulled message nor a refusal reason.
+        /// </param>
         public static bool PullToPlayer(
-            Piece.Requirement[] requirements, int qualityLevel, int multiplier, Player player, FeatureFlags flags)
+            Piece.Requirement[] requirements, int qualityLevel, int multiplier, Player player, FeatureFlags flags,
+            out bool requested)
         {
-            if (player == null || requirements == null || flags == null)
+            requested = false;
+            if (player == null || flags == null)
                 return false;
 
-            Vec3 origin = OriginOf(player);
+            // PlanFor is the single planning entry point: it collects the eligible sources once and
+            // asks storage only for the shortfall below what the player carries.
+            PullPlanResult plan = PlanFor(
+                requirements, qualityLevel, multiplier, player, flags, out IReadOnlyList<IStorageSource> sources);
 
-            // PlanFor is the single planning entry point (Task 13 wrote it for this task, uncalled):
-            // it collects the eligible sources once and asks storage for the full requirement.
-            PullPlanResult plan = PlanFor(requirements, qualityLevel, multiplier, origin, flags);
+            // Nothing to fetch: no requirements at all, or the player already holds every one of them.
+            // The pull is a no-op, so report nothing rather than a misleading success or room failure.
+            if (plan.Feasible && plan.Lines.Count == 0)
+                return true;
+
+            requested = true;
+
             if (!plan.Feasible)
                 return false;
-
-            if (plan.Lines.Count == 0)
-                return true; // the recipe needed nothing from storage
-
-            // The very list PlanFor planned against (cached for the frame), so the lines' SourceIds resolve.
-            IReadOnlyList<IStorageSource> sources = Collect(origin, flags);
 
             // No crafted output is reserved here: the pull is the whole action, nothing is crafted.
             if (!DestinationAllows(player, requirements, plan, null))
@@ -319,7 +401,7 @@ namespace CraftFromDrawersAndChests.Pull
             }
 
             return DestinationCapacity.CanAccept(
-                DestinationStacks(inventory), DestinationEmptySlots(inventory), deliveries);
+                InventoryStacks(inventory), DestinationEmptySlots(inventory), deliveries);
         }
 
         /// <summary>The requirement whose item carries the given prefab name, or null when none does.</summary>
@@ -350,11 +432,14 @@ namespace CraftFromDrawersAndChests.Pull
         }
 
         /// <summary>
-        /// The destination's stacks as the pure view the merge predicate matches on, read exactly the
-        /// way <c>Storage.DrawerSource</c> reads them: shared name, quality, world level, current size
-        /// and stack size. Read-only — the inventory is never written here.
+        /// An inventory's stacks as the pure view the merge predicate matches on, read exactly the way
+        /// <c>Storage.DrawerSource</c> reads them: shared name, quality, world level, current size and
+        /// stack size. Used for both halves of the availability question — as a delivery's destination
+        /// (<see cref="DestinationAllows"/>) and as the player's own stock that reduces a request
+        /// (<see cref="HeldCounts"/>) — so both match on the same three-part identity. Read-only: the
+        /// inventory is never written here.
         /// </summary>
-        private static List<DrawerTake.InventoryStack> DestinationStacks(Inventory inventory)
+        private static List<DrawerTake.InventoryStack> InventoryStacks(Inventory inventory)
         {
             var stacks = new List<DrawerTake.InventoryStack>();
             if (inventory == null || inventory.m_inventory == null)

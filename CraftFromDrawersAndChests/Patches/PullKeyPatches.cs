@@ -102,7 +102,13 @@ namespace CraftFromDrawersAndChests.Patches
 
             int multiplier = ___m_multiCrafting && ___m_multiCraftAmount > 0 ? ___m_multiCraftAmount : 1;
 
-            bool pulled = PullEngine.PullToPlayer(recipe.m_resources, qualityLevel, multiplier, player, flags);
+            bool pulled = PullEngine.PullToPlayer(
+                recipe.m_resources, qualityLevel, multiplier, player, flags, out bool requested);
+
+            // Intercepted either way: the click was a pull, so vanilla must not craft as well.
+            if (!requested)
+                return false; // nothing to fetch — a no-op, with neither a success nor a failure to report
+
             if (pulled)
             {
                 ShowMessage(player, flags.PulledMessage);
@@ -113,7 +119,6 @@ namespace CraftFromDrawersAndChests.Patches
                 ShowMessage(player, FailureReason(player, recipe.m_resources, qualityLevel, multiplier, flags));
             }
 
-            // Intercepted: the click was a pull, so vanilla must not craft as well.
             return false;
         }
 
@@ -129,8 +134,8 @@ namespace CraftFromDrawersAndChests.Patches
         /// returns false, exactly as CFC's does, so a click that was meant to fetch materials cannot
         /// also place the piece — and a placement can therefore never be paid for with nothing. The
         /// pull itself is <see cref="PullEngine.PullToPlayer"/>, the very entry point the ctrl-click
-        /// pull uses: it plans whole, proves the destination can take every line, and refuses having
-        /// moved nothing when it cannot, so no item can reach the ground.
+        /// pull uses: it plans the shortfall, proves the destination can take every line, and refuses
+        /// having moved nothing when it cannot, so no item can reach the ground.
         /// </para>
         /// <para>
         /// <b>The placement gate already knows about storage.</b> The status this prefix reads is the
@@ -196,7 +201,13 @@ namespace CraftFromDrawersAndChests.Patches
             if (decision == BuildPullDecision.RefuseWithoutPull)
                 return false;
 
-            bool pulled = PullEngine.PullToPlayer(selectedPiece.m_resources, 0, 1, __instance, flags);
+            bool pulled = PullEngine.PullToPlayer(
+                selectedPiece.m_resources, 0, 1, __instance, flags, out bool requested);
+
+            // Intercepted either way: the press was a pull, so the piece is not placed.
+            if (!requested)
+                return false; // nothing to fetch — a no-op, with neither a success nor a failure to report
+
             if (pulled)
             {
                 ShowMessage(__instance, flags.PulledMessage);
@@ -207,7 +218,6 @@ namespace CraftFromDrawersAndChests.Patches
                 ShowMessage(__instance, FailureReason(__instance, selectedPiece.m_resources, 0, 1, flags));
             }
 
-            // Intercepted: the press was a pull, so the piece is not placed.
             return false;
         }
 
@@ -313,17 +323,19 @@ namespace CraftFromDrawersAndChests.Patches
         }
 
         /// <summary>
-        /// Why a refused pull was refused, for the player-facing message: the plan is rebuilt (it is
-        /// cheap — the sources are cached for the frame) so a storage shortfall can name the missing
-        /// items, de-duplicated; a plan that storage could cover but the inventory could not take
-        /// reports the room failure instead. Shared by the recipe and the building-piece pull, which
-        /// differ only in the requirements and the quality/multiplier they pass.
+        /// Why a refused pull was refused, for the player-facing message: the shortfall plan is rebuilt
+        /// (it is cheap — the sources are cached for the frame) so a storage shortfall can name only the
+        /// items that are actually still missing; a plan that storage could cover but the inventory
+        /// could not take reports the room failure instead. Shared by the recipe and the building-piece
+        /// pull, which differ only in the requirements and the quality/multiplier they pass. Planned
+        /// from the same shortfall <see cref="PullEngine.PullToPlayer"/> used, so the message can never
+        /// name an item the player is already carrying.
         /// </summary>
         private static string FailureReason(
             Player player, Piece.Requirement[] requirements, int qualityLevel, int multiplier, FeatureFlags flags)
         {
-            Vec3 origin = PullEngine.OriginOf(player);
-            PullPlanResult plan = PullEngine.PlanFor(requirements, qualityLevel, multiplier, origin, flags);
+            PullPlanResult plan = PullEngine.PlanFor(
+                requirements, qualityLevel, multiplier, player, flags, out _);
             return plan.Feasible
                 ? PullKeyRules.NoRoomMessage
                 : PullKeyRules.MissingMessage(plan.MissingItemNames);
@@ -334,17 +346,18 @@ namespace CraftFromDrawersAndChests.Patches
         /// The field is private, so it is reached by reflection exactly as CraftFromContainers reaches
         /// it (CFC line 1115). Reading it here rather than declaring it in the patch signature keeps
         /// this patch independent of the nested <c>Player.PlacementStatus</c> enum's accessibility —
-        /// only the numeric value is compared. A missing field (a later game version) reads as -1,
-        /// which <see cref="BuildPullRules.IsPlacementValid"/> treats as not valid, so an unknown
-        /// layout fails closed: the press is swallowed with nothing pulled and nothing placed.
+        /// only the numeric value is compared. The value-to-number step (including the -1 sentinel for
+        /// a missing or unreadable field) is the pure <see cref="BuildPullRules.PlacementStatusOf"/>,
+        /// which has its own test; a missing field (a later game version) reads as -1, which
+        /// <see cref="BuildPullRules.IsPlacementValid"/> treats as not valid, so an unknown layout fails
+        /// closed: the press is swallowed with nothing pulled and nothing placed.
         /// </summary>
         private static int PlacementStatus(Player player)
         {
             if (player == null || PlacementStatusField == null)
                 return -1;
 
-            object value = PlacementStatusField.GetValue(player);
-            return value == null ? -1 : System.Convert.ToInt32(value);
+            return BuildPullRules.PlacementStatusOf(PlacementStatusField.GetValue(player));
         }
 
         /// <summary>Whether the configured prevent key is held; an unbound key reads as not held.</summary>

@@ -47,6 +47,24 @@ namespace CraftFromDrawersAndChests.Tests.Logic
         }
 
         [Test]
+        public void ShouldIntercept_PullKeyNotHeldWithSwitchOff_IsFalse()
+        {
+            // With the switch off, holding the prevent key suppresses the mod anyway; a missing pull
+            // key refuses for its own reason. Neither state may consume the press.
+            Assert.That(Intercepts(pullKeyHeld: false, preventKeyHeld: false, switchPrevent: false), Is.False);
+            Assert.That(Intercepts(pullKeyHeld: false, preventKeyHeld: true, switchPrevent: false), Is.False);
+        }
+
+        [Test]
+        public void ShouldIntercept_PullKeyNotHeldWithSwitchOn_IsFalse()
+        {
+            // With the switch on the prevent gate alone allows (prevent held) or refuses (prevent not
+            // held); the pull key must be required in both, so a missing one never intercepts.
+            Assert.That(Intercepts(pullKeyHeld: false, preventKeyHeld: true, switchPrevent: true), Is.False);
+            Assert.That(Intercepts(pullKeyHeld: false, preventKeyHeld: false, switchPrevent: true), Is.False);
+        }
+
+        [Test]
         public void ShouldIntercept_PullKeyHeldButSuppressedByPreventKey_IsFalse()
         {
             // The shipped default: holding the prevent key suppresses the mod, so the press is vanilla's.
@@ -105,6 +123,34 @@ namespace CraftFromDrawersAndChests.Tests.Logic
         {
             // The field could not be read (a later game version): fail closed, do not pull.
             Assert.That(BuildPullRules.IsPlacementValid(-1), Is.False);
+        }
+
+        [Test]
+        public void PlacementStatusOf_NullField_IsMinusOne()
+        {
+            // The reader half of the gate: a null field value (a renamed or absent
+            // Player.m_placementStatus) becomes the -1 sentinel, which IsPlacementValid treats as not
+            // valid — so the press is swallowed rather than pulling on an unknown layout. Only the
+            // predicate side was pinned before; this half would degrade silently otherwise.
+            Assert.That(BuildPullRules.PlacementStatusOf(null), Is.EqualTo(-1));
+            Assert.That(BuildPullRules.IsPlacementValid(BuildPullRules.PlacementStatusOf(null)), Is.False);
+        }
+
+        [Test]
+        public void PlacementStatusOf_BoxedStatus_IsItsNumber()
+        {
+            Assert.That(BuildPullRules.PlacementStatusOf(0), Is.EqualTo(0));
+            Assert.That(BuildPullRules.PlacementStatusOf(5), Is.EqualTo(5));
+
+            // The field's real shape is a boxed enum; it converts through its underlying value, so a
+            // valid status still reads as 0.
+            Assert.That(BuildPullRules.PlacementStatusOf(System.DayOfWeek.Monday), Is.EqualTo(1));
+        }
+
+        [Test]
+        public void PlacementStatusOf_UnconvertibleValue_IsMinusOne()
+        {
+            Assert.That(BuildPullRules.PlacementStatusOf("not a status"), Is.EqualTo(-1));
         }
 
         [Test]

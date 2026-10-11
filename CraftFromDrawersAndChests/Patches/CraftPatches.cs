@@ -214,7 +214,9 @@ namespace CraftFromDrawersAndChests.Patches
         /// Builds the plan for <paramref name="resources"/>: collects the eligible sources (once per
         /// frame) and asks the planner for the shortfall below what the player already carries. The
         /// collected sources are returned too, so the caller can hand the very same list to
-        /// <see cref="PullEngine.Execute"/> and have its plan lines resolve.
+        /// <see cref="PullEngine.Execute"/> and have its plan lines resolve. Planned by the same
+        /// <see cref="PullEngine.PlanFor"/> the pull itself uses, so the gate and the executor share one
+        /// shortfall rule.
         /// </summary>
         private static void BuildPlan(
             Player player,
@@ -224,15 +226,11 @@ namespace CraftFromDrawersAndChests.Patches
             out IReadOnlyList<IStorageSource> sources,
             out PullPlanResult plan)
         {
-            FeatureFlags flags = PluginConfig.Flags;
-            Vec3 origin = PullEngine.OriginOf(player);
-            sources = PullEngine.Collect(origin, flags);
-
-            Inventory inventory = player.GetInventory();
-            PullRequest[] requests = PullEngine.BuildRequests(
-                resources, qualityLevel, multiplier, name => PullEngine.CountHeld(inventory, name));
-
-            plan = PullEngine.Plan(requests, sources, origin, flags, PullEngine.AtUpgrader(player));
+            // The gate and the pull are planned by the same call, so the shortfall storage is asked for
+            // to answer "can this be paid for?" is exactly the shortfall the pull will later ask for —
+            // a yes here can never promise more than the pull can deliver. See PullEngine.PlanFor for
+            // the three-part item identity the held counts match on.
+            plan = PullEngine.PlanFor(resources, qualityLevel, multiplier, player, PluginConfig.Flags, out sources);
         }
 
         /// <summary>

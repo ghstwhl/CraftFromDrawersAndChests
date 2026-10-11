@@ -95,14 +95,44 @@ namespace CraftFromDrawersAndChests.Logic
         }
 
         /// <summary>
+        /// Whether <paramref name="stack"/> <b>is</b> the item described by <paramref name="name"/>,
+        /// <paramref name="quality"/> and <paramref name="worldLevel"/>: the one predicate this
+        /// project matches an inventory stack on. Names are compared by ordinal, never by the
+        /// localised string's culture, and quality <b>and</b> world level must both be equal — so a
+        /// partial stack of the same name at a different quality is a different item.
+        /// <para>
+        /// Both halves of the availability question reuse it, so they cannot disagree about which
+        /// stacks are the item: <see cref="MatchingFreeStackSpace"/> asks how much of it the
+        /// destination can still accept, and <see cref="MatchingAmount"/> how much of it the inventory
+        /// already holds. It is also the predicate <c>Inventory.AddItem(ItemData)</c> itself merges on
+        /// (<c>FindFreeStackItem</c>), which is what makes those two answers exact rather than
+        /// optimistic.
+        /// </para>
+        /// </summary>
+        /// <param name="stack">The candidate stack; a default (null-name) stack matches nothing.</param>
+        /// <param name="name">The item's shared name (e.g. <c>"$item_wood"</c>); null or empty matches nothing.</param>
+        /// <param name="quality">The item's quality, which must be equal.</param>
+        /// <param name="worldLevel">The item's world level, which must be equal.</param>
+        public static bool IsSameItem(InventoryStack stack, string name, int quality, int worldLevel)
+        {
+            if (string.IsNullOrEmpty(name))
+                return false;
+
+            if (!string.Equals(stack.Name, name, StringComparison.Ordinal))
+                return false;
+
+            return stack.Quality == quality && stack.WorldLevel == worldLevel;
+        }
+
+        /// <summary>
         /// The free stack space a delivery of <paramref name="name"/> at
         /// <paramref name="quality"/><paramref name="worldLevel"/> can use, given the destination's
         /// existing <paramref name="stacks"/>. This mirrors the predicate
         /// <c>Inventory.AddItem(ItemData)</c> actually merges on (<c>FindFreeStackItem</c>): a stack
-        /// counts only when its name, <b>quality</b> and world level all match and it is not already
-        /// full. It deliberately does <b>not</b> mirror <c>Inventory.CanAddItem</c>, whose
-        /// <c>FindFreeStackSpace</c> ignores quality — the gap that let a chunk be removed and then
-        /// refused (and destroyed) by <c>AddItem</c>.
+        /// counts only when <see cref="IsSameItem"/> — name, <b>quality</b> and world level all equal —
+        /// and it is not already full. It deliberately does <b>not</b> mirror
+        /// <c>Inventory.CanAddItem</c>, whose <c>FindFreeStackSpace</c> ignores quality — the gap that
+        /// let a chunk be removed and then refused (and destroyed) by <c>AddItem</c>.
         /// </summary>
         public static int MatchingFreeStackSpace(
             string name, int quality, int worldLevel, IEnumerable<InventoryStack> stacks)
@@ -113,9 +143,7 @@ namespace CraftFromDrawersAndChests.Logic
             int space = 0;
             foreach (InventoryStack stack in stacks)
             {
-                if (!string.Equals(stack.Name, name, StringComparison.Ordinal))
-                    continue;
-                if (stack.Quality != quality || stack.WorldLevel != worldLevel)
+                if (!IsSameItem(stack, name, quality, worldLevel))
                     continue;
                 if (stack.Stack >= stack.MaxStack)
                     continue;
@@ -123,6 +151,38 @@ namespace CraftFromDrawersAndChests.Logic
                 space += stack.MaxStack - stack.Stack;
             }
             return space;
+        }
+
+        /// <summary>
+        /// How many items the inventory already holds that <b>are</b> the item described by
+        /// <paramref name="name"/>, <paramref name="quality"/> and <paramref name="worldLevel"/>:
+        /// the sum of every matching stack's contents, counted with the very predicate
+        /// <see cref="MatchingFreeStackSpace"/> uses (<see cref="IsSameItem"/>).
+        /// <para>
+        /// This is the source half of the availability question — what the player already has — and
+        /// its mirror is the destination half. Because both match on the same three-part identity, a
+        /// pull can subtract the held amount from a requirement and then prove room for exactly the
+        /// remainder, without either side counting a stack the other would not.
+        /// </para>
+        /// </summary>
+        /// <param name="name">The item's shared name; null or empty counts nothing.</param>
+        /// <param name="quality">The item's quality, which must be equal to count.</param>
+        /// <param name="worldLevel">The item's world level, which must be equal to count.</param>
+        /// <param name="stacks">The inventory's stacks; null counts nothing.</param>
+        public static int MatchingAmount(string name, int quality, int worldLevel, IEnumerable<InventoryStack> stacks)
+        {
+            if (stacks == null || string.IsNullOrEmpty(name))
+                return 0;
+
+            int held = 0;
+            foreach (InventoryStack stack in stacks)
+            {
+                if (!IsSameItem(stack, name, quality, worldLevel))
+                    continue;
+
+                held += stack.Stack;
+            }
+            return held;
         }
 
         /// <summary>

@@ -84,7 +84,7 @@ namespace CraftFromDrawersAndChests.Logic
         }
 
         /// <summary>
-        /// The failure message shown when storage could not supply the whole requirement, naming the
+        /// The failure message shown when storage could not supply the shortfall, naming the
         /// missing items once each. An empty (or all-empty) list yields a generic sentence rather
         /// than a dangling prefix, so the player always sees a reason.
         /// </summary>

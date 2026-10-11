@@ -110,6 +110,36 @@ namespace CraftFromDrawersAndChests.Logic
         }
 
         /// <summary>
+        /// The numeric placement status from the raw value of <c>Player.m_placementStatus</c>, or the
+        /// <c>-1</c> sentinel when it cannot be read. This is the reader half of the placement gate,
+        /// kept pure so it can be pinned by a test: the game-facing patch resolves the private field by
+        /// reflection (as CraftFromContainers does at its line 1115) and hands the boxed value here.
+        /// <para>
+        /// A null value means the field was absent (a later game version renamed it), and an
+        /// unconvertible value means it was not a number; both read as <c>-1</c>, which
+        /// <see cref="IsPlacementValid"/> treats as <b>not</b> valid. So a missing or changed field
+        /// fails closed — the press is swallowed with nothing pulled and nothing placed — rather than
+        /// silently pulling on an unknown layout. That the sentinel survives the round trip is exactly
+        /// the half that would otherwise degrade silently, which is why it has its own test.
+        /// </para>
+        /// </summary>
+        /// <param name="fieldValue">The boxed field value, or null when the field could not be read.</param>
+        public static int PlacementStatusOf(object fieldValue)
+        {
+            if (fieldValue == null)
+                return -1;
+
+            try
+            {
+                return System.Convert.ToInt32(fieldValue);
+            }
+            catch
+            {
+                return -1;
+            }
+        }
+
+        /// <summary>
         /// The decision for an attack press that <see cref="ShouldIntercept"/> already accepted. Ports
         /// CraftFromContainers' branch order exactly (CFC lines 1108-1123), which is significant
         /// because the branches disagree: a repair piece is handed to vanilla, whereas a missing piece,

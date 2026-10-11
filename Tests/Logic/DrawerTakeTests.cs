@@ -178,6 +178,74 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             Assert.That(DrawerTake.CanDeliver(19, 20, 18, 0), Is.False, "one over the sum, no empty slot");
         }
 
+        // IsSameItem is the single item-identity predicate both halves of the availability question
+        // match on: the delivery's free-space check (MatchingFreeStackSpace) and the held-stock count
+        // that decides a pull's shortfall (MatchingAmount). Pinning it pins both.
+
+        [Test]
+        public void IsSameItem_MatchesOnlyNameQualityAndWorldLevel()
+        {
+            var stack = Stack("$item_wood", 1, 0, 5, 20);
+
+            Assert.That(DrawerTake.IsSameItem(stack, "$item_wood", 1, 0), Is.True);
+
+            Assert.That(DrawerTake.IsSameItem(stack, "$item_stone", 1, 0), Is.False, "different name");
+            Assert.That(DrawerTake.IsSameItem(stack, "$item_wood", 2, 0), Is.False, "different quality");
+            Assert.That(DrawerTake.IsSameItem(stack, "$item_wood", 1, 1), Is.False, "different world level");
+        }
+
+        [Test]
+        public void IsSameItem_NoNameOrDifferentCase_MatchesNothing()
+        {
+            var stack = Stack("$item_wood", 1, 0, 5, 20);
+
+            Assert.That(DrawerTake.IsSameItem(stack, null, 1, 0), Is.False);
+            Assert.That(DrawerTake.IsSameItem(stack, string.Empty, 1, 0), Is.False);
+            // Names are compared by ordinal, never by culture or case: this is a different item.
+            Assert.That(DrawerTake.IsSameItem(stack, "$ITEM_WOOD", 1, 0), Is.False);
+        }
+
+        [Test]
+        public void MatchingAmount_SumsOnlyNameQualityAndWorldLevelMatches()
+        {
+            var inventory = new[]
+            {
+                Stack("$item_wood", 1, 0, 5, 20),   // matches: 5
+                Stack("$item_wood", 1, 0, 12, 20),  // matches: 12
+                Stack("$item_wood", 1, 0, 20, 20),  // matching and full: still held
+                Stack("$item_wood", 2, 0, 7, 20),   // same name, different quality: ignored
+                Stack("$item_wood", 1, 1, 3, 20),   // same name/quality, different world level: ignored
+                Stack("$item_stone", 1, 0, 9, 20),  // different name: ignored
+            };
+
+            Assert.That(DrawerTake.MatchingAmount("$item_wood", 1, 0, inventory), Is.EqualTo(37));
+        }
+
+        [Test]
+        public void MatchingAmount_NoInventoryOrNoName_IsZero()
+        {
+            Assert.That(DrawerTake.MatchingAmount("$item_wood", 1, 0, null), Is.EqualTo(0));
+            Assert.That(DrawerTake.MatchingAmount(null, 1, 0, new DrawerTake.InventoryStack[0]), Is.EqualTo(0));
+            Assert.That(DrawerTake.MatchingAmount(string.Empty, 1, 0, new DrawerTake.InventoryStack[0]), Is.EqualTo(0));
+        }
+
+        [Test]
+        public void MatchingAmount_IsTheMirrorOfMatchingFreeStackSpace()
+        {
+            // Same stacks, same predicate: a full matching stack is held (counts towards the shortfall)
+            // yet offers no free space. A pull can therefore subtract the held amount and still prove
+            // room for the remainder without a stack falling between the two rules.
+            var inventory = new[]
+            {
+                Stack("$item_wood", 1, 0, 5, 20),
+                Stack("$item_wood", 1, 0, 20, 20),
+                Stack("$item_wood", 2, 0, 5, 20),
+            };
+
+            Assert.That(DrawerTake.MatchingAmount("$item_wood", 1, 0, inventory), Is.EqualTo(25));
+            Assert.That(DrawerTake.MatchingFreeStackSpace("$item_wood", 1, 0, inventory), Is.EqualTo(15));
+        }
+
         [Test]
         public void TheDefectCase_SameNameDifferentQualityWithNoEmptySlot_IsRefused()
         {
