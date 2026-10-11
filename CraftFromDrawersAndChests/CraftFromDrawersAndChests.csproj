@@ -121,9 +121,12 @@
     <Compile Include="Logic\Geometry.cs" />
     <Compile Include="Logic\PullPlan.cs" />
     <Compile Include="Logic\StorageKind.cs" />
+    <Compile Include="Storage\ContainerTrackingPatches.cs" />
     <Compile Include="Storage\DrawerApi.cs" />
     <Compile Include="Storage\DrawerSource.cs" />
     <Compile Include="Storage\IStorageSource.cs" />
+    <Compile Include="Storage\StorageRegistry.cs" />
+    <Compile Include="Storage\VanillaChestSource.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
