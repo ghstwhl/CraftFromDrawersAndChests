@@ -54,6 +54,13 @@ namespace CraftFromDrawersAndChests.Storage
         /// <summary>The one supported removal RPC; never <c>WithdrawItem_Request</c>.</summary>
         public const string ForceRemoveRpcName = "ForceRemove";
 
+        /// <summary>
+        /// The drawer's own add RPC, used only to refund a chunk whose delivery failed after it had
+        /// been removed. Its handler is <c>RPC_AddItem(sender, prefab, amount, quality)</c>; it
+        /// ignores the request unless this peer owns the drawer, so ownership is claimed first.
+        /// </summary>
+        public const string AddItemRequestRpcName = "AddItem_Request";
+
         // Fully qualified: UnityEngine.Logger exists too, so the bare name is ambiguous.
         private static readonly ManualLogSource Log = BepInEx.Logging.Logger.CreateLogSource(ModInfo.ModName);
 

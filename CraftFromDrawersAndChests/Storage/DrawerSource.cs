@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using BepInEx.Logging;
 using CraftFromDrawersAndChests.Logic;
 using UnityEngine;
@@ -6,9 +7,10 @@ namespace CraftFromDrawersAndChests.Storage
 {
     /// <summary>
     /// Adapts a KG Item Drawers drawer (a <c>ZNetView</c>, not a <c>Container</c>) to
-    /// <see cref="IStorageSource"/>. Values are read live from the drawer's ZDO; the only mutations
-    /// are the supported removal path, <c>ClaimOwnership()</c> followed by the <c>ForceRemove</c>
-    /// RPC, and delivering the removed items into the <c>destination</c> inventory.
+    /// <see cref="IStorageSource"/>. Values are read live from the drawer's ZDO. The only mutations
+    /// are the drawer's own RPCs — <c>ClaimOwnership()</c> followed by <c>ForceRemove</c> to take
+    /// items out, <c>AddItem_Request</c> to put a chunk back when its delivery fails, and adding the
+    /// removed items to the <c>destination</c> inventory.
     /// </summary>
     public sealed class DrawerSource : IStorageSource
     {
@@ -88,26 +90,34 @@ namespace CraftFromDrawersAndChests.Storage
         /// them into <paramref name="destination"/>, returning how many were actually delivered.
         /// <para>
         /// Removal uses only the supported path: <c>ClaimOwnership()</c> then the <c>ForceRemove</c>
-        /// RPC. Because <c>ForceRemove</c> only removes, the items are then materialised from
-        /// <paramref name="itemName"/>'s prefab and added to <paramref name="destination"/> — the
-        /// same delivery the chest path performs through
-        /// <c>MultiUserChestBridge.RemoveFromChest(chest, item, destination, ...)</c>.
+        /// RPC. Because <c>ForceRemove</c> only removes, the removed items are materialised from
+        /// <paramref name="itemName"/>'s prefab — at the drawer's own stored quality and the current
+        /// world level — and added to <paramref name="destination"/> with
+        /// <c>Inventory.AddItem(ItemData)</c>.
         /// </para>
         /// <para>
-        /// Delivery is chunked one stack at a time. A single
-        /// <c>Inventory.AddItem(GameObject, int)</c> places <b>at most one stack</b> (it sets
-        /// <c>m_stack = Mathf.Min(amount, m_maxStackSize)</c> and adds a single <c>ItemData</c>), so
-        /// handing it the whole amount would silently destroy everything beyond the first stack.
-        /// The chunk sizes come from the pure <see cref="DrawerTake.NextChunk"/>, whose loop this
-        /// method drives.
+        /// Delivery is chunked one stack at a time (<see cref="DrawerTake.NextChunk"/>): a single
+        /// <c>AddItem(ItemData)</c> call places <b>at most one stack</b>, so handing it the whole
+        /// amount would silently destroy everything beyond the first stack.
         /// </para>
         /// <para>
-        /// Each chunk is capacity-checked (<c>CanAddItem</c>) <b>before</b> that chunk is removed,
-        /// and the amount removed is exactly the amount then added, so the drawer never gives up
-        /// more than the player received: <c>removed == delivered</c> at every step and at the end.
-        /// With a null destination, an unresolvable prefab or no room for even the first chunk this
-        /// removes nothing and returns 0 rather than destroying the items (the design's top
-        /// anti-goal).
+        /// A chunk is removed only once its delivery is <b>known</b> to be accepted. The gate is
+        /// <see cref="DrawerTake.CanDeliver"/>, fed by <see cref="DrawerTake.MatchingFreeStackSpace"/>
+        /// and the destination's empty-slot count, and it mirrors the very predicate
+        /// <c>Inventory.AddItem(ItemData)</c> matches on: name, <b>quality</b> and world level must
+        /// all match and the count must fit the matching free stack space plus the empty slots. It
+        /// deliberately does not use <c>CanAddItem</c>: that method's <c>FindFreeStackSpace</c>
+        /// ignores quality (and the <c>GameObject</c> overload reads the prefab's default world
+        /// level), so a same-name partial stack of a different quality with no empty slot makes it
+        /// true while <c>AddItem</c> refuses the very same chunk.
+        /// </para>
+        /// <para>
+        /// If a delivery is refused anyway, the chunk is put straight back into the drawer through
+        /// its own <c>AddItem_Request</c> RPC, so the failed chunk leaves the drawer exactly as it
+        /// was. The drawer therefore never gives up more than the player received, at every step and
+        /// at the end: <c>removed == delivered</c>. With a null destination, an unresolvable prefab
+        /// or no room for even the first chunk this removes nothing and returns 0 rather than
+        /// destroying the items (the design's top anti-goal).
         /// </para>
         /// <para>
         /// Never <c>WithdrawItem_Request</c> — it spawns a world drop at the player and clears an
@@ -128,31 +138,36 @@ namespace CraftFromDrawersAndChests.Storage
             if (want <= 0)
                 return 0;
 
-            // Resolve and capacity-check before removing anything: if the items cannot be delivered,
-            // removing them would destroy them.
+            // Resolve the prefab before touching the drawer: without a usable item to materialise
+            // there is nothing that could be delivered.
             GameObject prefab = ObjectDB.instance != null ? ObjectDB.instance.GetItemPrefab(itemName) : null;
             ItemDrop itemDrop = prefab != null ? prefab.GetComponent<ItemDrop>() : null;
-            ItemDrop.ItemData itemData = itemDrop != null ? itemDrop.m_itemData : null;
-            int maxStack = itemData != null && itemData.m_shared != null
-                ? itemData.m_shared.m_maxStackSize
-                : 0;
-
-            if (prefab == null || maxStack <= 0)
+            ItemDrop.ItemData blueprint = itemDrop != null ? itemDrop.m_itemData : null;
+            if (blueprint == null || blueprint.m_shared == null || blueprint.m_shared.m_maxStackSize <= 0)
             {
                 Log.LogWarning("Drawer '" + ObjectName + "' reports prefab '" + itemName +
                                "' that has no usable ItemDrop; taking nothing.");
                 return 0;
             }
 
-            // Deliver one stack at a time. AddItem(GameObject, int) places at most m_maxStackSize
-            // items, so each chunk is at most one stack; a single call for the whole amount would
-            // lose everything beyond the first stack. Each chunk's removal is gated on its own
-            // capacity check, so removed == delivered at every step.
+            int maxStack = blueprint.m_shared.m_maxStackSize;
+            string sharedName = blueprint.m_shared.m_name;
+            int quality = CurrentQuality();
+            // AddItem(GameObject, int) stores Game.m_worldLevel truncated to a byte; mirror that
+            // exactly so the gate and the delivery agree on the world level they match on.
+            int worldLevel = (byte)Game.m_worldLevel;
+
+            // Deliver one stack at a time. Each chunk's removal is gated on the same predicate the
+            // delivery uses, so a chunk is never removed unless it is known to be accepted.
             int delivered = 0;
             int chunk;
             while ((chunk = DrawerTake.NextChunk(want, delivered, maxStack)) > 0)
             {
-                if (!destination.CanAddItem(prefab, chunk))
+                int freeSpace = DrawerTake.MatchingFreeStackSpace(
+                    sharedName, quality, worldLevel, DestinationStacks(destination));
+                int emptySlots = DestinationEmptySlots(destination);
+
+                if (!DrawerTake.CanDeliver(chunk, maxStack, freeSpace, emptySlots))
                 {
                     Log.LogWarning("No room in the destination inventory for the next " + chunk +
                                    "x '" + itemName + "'; delivered " + delivered + " of " + want + ".");
@@ -162,12 +177,21 @@ namespace CraftFromDrawersAndChests.Storage
                 _handle.View.ClaimOwnership();
                 _handle.View.InvokeRPC(DrawerApi.ForceRemoveRpcName, chunk);
 
-                // CanAddItem(prefab, chunk) is true and chunk <= maxStack, so this places exactly
-                // chunk; the return is still checked so an API surprise is never swallowed.
-                if (!destination.AddItem(prefab, chunk))
+                // The item is materialised at the drawer's quality and the world level the gate
+                // matched on, so AddItem(ItemData) merges into exactly the stacks the gate counted.
+                ItemDrop.ItemData toAdd = blueprint.Clone();
+                toAdd.m_dropPrefab = prefab;
+                toAdd.m_stack = chunk;
+                toAdd.m_quality = quality;
+                toAdd.m_worldLevel = (byte)worldLevel;
+
+                if (!destination.AddItem(toAdd))
                 {
+                    // Unreachable while the gate mirrors AddItem's own predicate; kept as a last
+                    // line of defence so a refused chunk can never silently destroy the items.
                     Log.LogError("A drawer gave up " + chunk + "x '" + itemName +
-                                 "' but the destination refused them.");
+                                 "' but the destination refused them; refunding them to the drawer.");
+                    Refund(itemName, chunk, quality);
                     break;
                 }
 
@@ -175,6 +199,57 @@ namespace CraftFromDrawersAndChests.Storage
             }
 
             return delivered;
+        }
+
+        /// <summary>The drawer's stored quality, read live from its ZDO; never below 1.</summary>
+        private int CurrentQuality()
+        {
+            ZDO zdo = _handle.View != null ? _handle.View.GetZDO() : null;
+            int quality = zdo != null ? zdo.GetInt(DrawerApi.QualityKey, 1) : 1;
+            return quality < 1 ? 1 : quality;
+        }
+
+        /// <summary>The destination's stacks, reduced to the pure view the delivery gate matches on.</summary>
+        private static List<DrawerTake.InventoryStack> DestinationStacks(Inventory destination)
+        {
+            var stacks = new List<DrawerTake.InventoryStack>();
+            if (destination == null || destination.m_inventory == null)
+                return stacks;
+
+            for (int i = 0; i < destination.m_inventory.Count; i++)
+            {
+                ItemDrop.ItemData item = destination.m_inventory[i];
+                if (item == null || item.m_shared == null)
+                    continue;
+
+                stacks.Add(new DrawerTake.InventoryStack(
+                    item.m_shared.m_name,
+                    item.m_quality,
+                    item.m_worldLevel,
+                    item.m_stack,
+                    item.m_shared.m_maxStackSize));
+            }
+            return stacks;
+        }
+
+        /// <summary>The destination's empty slot count, the way <c>Inventory</c> itself computes it.</summary>
+        private static int DestinationEmptySlots(Inventory destination)
+        {
+            if (destination == null || destination.m_inventory == null)
+                return 0;
+
+            return destination.m_width * destination.m_height - destination.m_inventory.Count;
+        }
+
+        /// <summary>
+        /// Puts a chunk that could not be delivered back into the drawer through the drawer's own add
+        /// RPC (<c>AddItem_Request</c>), so a failed chunk is a no-op. Ownership is claimed first
+        /// because the handler ignores the request unless this peer owns the drawer.
+        /// </summary>
+        private void Refund(string prefabName, int amount, int quality)
+        {
+            _handle.View.ClaimOwnership();
+            _handle.View.InvokeRPC(DrawerApi.AddItemRequestRpcName, prefabName, amount, quality);
         }
     }
 }

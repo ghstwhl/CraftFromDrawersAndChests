@@ -1,15 +1,20 @@
+using System;
+using System.Collections.Generic;
+
 namespace CraftFromDrawersAndChests.Logic
 {
     /// <summary>
     /// The pure decisions behind the game-facing <c>Storage.DrawerSource.Take</c>: how much a pull
-    /// may remove, and how that amount is split into the stack-sized chunks a single
-    /// <c>Inventory.AddItem(GameObject, int)</c> call can deliver. A pull must never destroy items —
-    /// the design's top anti-goal — so nothing may be removed unless it also has somewhere to go,
-    /// nothing beyond what the drawer actually holds may be removed, and a request larger than one
-    /// stack must be delivered in chunks because one <c>AddItem</c> call places at most one stack.
+    /// may remove, how that amount is split into the stack-sized chunks a single
+    /// <c>Inventory.AddItem(ItemData)</c> call can deliver, and whether the destination can
+    /// actually accept a chunk. A pull must never destroy items — the design's top anti-goal — so
+    /// nothing may be removed unless it also has somewhere to go, nothing beyond what the drawer
+    /// actually holds may be removed, a request larger than one stack must be delivered in chunks,
+    /// and a chunk may be removed only when <see cref="CanDeliver"/> — which mirrors the delivery's
+    /// own matching predicate, quality included — says it will be accepted.
     /// Lives in <c>Logic/</c> so these decisions are unit-testable without a live drawer or
-    /// inventory; the game-facing code resolves the prefab, checks room and performs the removal and
-    /// delivery one chunk at a time.
+    /// inventory; the game-facing code resolves the prefab, feeds these decisions the destination's
+    /// stacks, and performs the removal and delivery one chunk at a time.
     /// </summary>
     public static class DrawerTake
     {
@@ -36,15 +41,14 @@ namespace CraftFromDrawersAndChests.Logic
         /// (<paramref name="maxStackSize"/>) and never more than the amount still needed. This is
         /// the chunk-size and running-total decision the game-facing delivery loop drives.
         /// <para>
-        /// One <c>Inventory.AddItem(GameObject, int)</c> call places <b>at most one stack</b> — it
-        /// sets <c>m_stack = Mathf.Min(amount, m_maxStackSize)</c> and adds a single
-        /// <c>ItemData</c> — so an amount larger than one stack must be split into chunks of at most
-        /// this size; delivering it in one call silently destroys the excess.
+        /// Keeping every chunk to at most one stack is what makes <see cref="CanDeliver"/> an exact
+        /// prediction of the delivery: a chunk larger than a stack could no longer be placed from
+        /// matching free space plus a single empty slot, so none is ever removed.
         /// </para>
         /// </summary>
         /// <param name="target">How many items the pull intends to deliver in total.</param>
         /// <param name="deliveredSoFar">How many have already been delivered (the running total).</param>
-        /// <param name="maxStackSize">The prefab's maximum stack size, i.e. the most one <c>AddItem</c> call can place.</param>
+        /// <param name="maxStackSize">The prefab's stack size, i.e. the largest chunk one delivery call can be trusted with.</param>
         /// <returns>The next chunk size, or 0 when the target is met or no chunk is deliverable.</returns>
         public static int NextChunk(int target, int deliveredSoFar, int maxStackSize)
         {
@@ -56,6 +60,92 @@ namespace CraftFromDrawersAndChests.Logic
                 return 0;
 
             return remaining < maxStackSize ? remaining : maxStackSize;
+        }
+
+        /// <summary>
+        /// One inventory stack reduced to the facts the delivery decision matches on. A game-free
+        /// view so the matching predicate — the part that decides whether a delivery can succeed —
+        /// is unit-testable without a live <c>Inventory</c>.
+        /// </summary>
+        public readonly struct InventoryStack
+        {
+            /// <summary>The stack's shared item name (e.g. <c>"$item_wood"</c>); may be null.</summary>
+            public readonly string Name;
+
+            /// <summary>The stack's item quality.</summary>
+            public readonly int Quality;
+
+            /// <summary>The stack's world level.</summary>
+            public readonly int WorldLevel;
+
+            /// <summary>How many items the stack currently holds.</summary>
+            public readonly int Stack;
+
+            /// <summary>The stack's maximum size.</summary>
+            public readonly int MaxStack;
+
+            public InventoryStack(string name, int quality, int worldLevel, int stack, int maxStack)
+            {
+                Name = name;
+                Quality = quality;
+                WorldLevel = worldLevel;
+                Stack = stack;
+                MaxStack = maxStack;
+            }
+        }
+
+        /// <summary>
+        /// The free stack space a delivery of <paramref name="name"/> at
+        /// <paramref name="quality"/><paramref name="worldLevel"/> can use, given the destination's
+        /// existing <paramref name="stacks"/>. This mirrors the predicate
+        /// <c>Inventory.AddItem(ItemData)</c> actually merges on (<c>FindFreeStackItem</c>): a stack
+        /// counts only when its name, <b>quality</b> and world level all match and it is not already
+        /// full. It deliberately does <b>not</b> mirror <c>Inventory.CanAddItem</c>, whose
+        /// <c>FindFreeStackSpace</c> ignores quality — the gap that let a chunk be removed and then
+        /// refused (and destroyed) by <c>AddItem</c>.
+        /// </summary>
+        public static int MatchingFreeStackSpace(
+            string name, int quality, int worldLevel, IEnumerable<InventoryStack> stacks)
+        {
+            if (stacks == null || string.IsNullOrEmpty(name))
+                return 0;
+
+            int space = 0;
+            foreach (InventoryStack stack in stacks)
+            {
+                if (!string.Equals(stack.Name, name, StringComparison.Ordinal))
+                    continue;
+                if (stack.Quality != quality || stack.WorldLevel != worldLevel)
+                    continue;
+                if (stack.Stack >= stack.MaxStack)
+                    continue;
+
+                space += stack.MaxStack - stack.Stack;
+            }
+            return space;
+        }
+
+        /// <summary>
+        /// Whether a single <c>Inventory.AddItem(ItemData)</c> call is guaranteed to place
+        /// <paramref name="chunk"/> items, given <paramref name="matchingFreeStackSpace"/> (see
+        /// <see cref="MatchingFreeStackSpace"/>) and <paramref name="emptySlots"/> empty destination
+        /// slots. <c>AddItem</c> merges into matching stacks and, for whatever is left, uses one
+        /// empty slot, so for a chunk of at most one stack (<paramref name="maxStackSize"/>) it
+        /// succeeds exactly when the chunk fits the matching free space plus the empty slots. A
+        /// larger chunk is rejected: <c>Take</c> delivers in stack-sized chunks, and handing
+        /// <c>AddItem</c> more than a stack would make it over-fill its empty slot beyond
+        /// <paramref name="maxStackSize"/>. This is the gate <c>Take</c> applies <b>before</b>
+        /// removing a chunk, so a chunk is removed only once its delivery is known to be accepted.
+        /// </summary>
+        public static bool CanDeliver(int chunk, int maxStackSize, int matchingFreeStackSpace, int emptySlots)
+        {
+            if (chunk <= 0 || maxStackSize <= 0 || chunk > maxStackSize)
+                return false;
+
+            long free = matchingFreeStackSpace > 0 ? matchingFreeStackSpace : 0;
+            long slots = emptySlots > 0 ? emptySlots : 0;
+            long capacity = free + slots * maxStackSize;
+            return chunk <= capacity;
         }
     }
 }

@@ -1,16 +1,21 @@
+using System;
 using CraftFromDrawersAndChests.Logic;
 using NUnit.Framework;
 
 namespace CraftFromDrawersAndChests.Tests.Logic
 {
     /// <summary>
-    /// Pins the pure "how much may this drawer pull remove" decision (Task 9, Ruling 20). This is
-    /// the part of <c>DrawerSource.Take</c> that can be checked without the game: the amount to
-    /// remove is clamped to what the drawer holds, and nothing may be removed when the items would
-    /// have nowhere to go — otherwise the pull would destroy them, the design's top anti-goal.
+    /// Pins the pure decisions behind <c>DrawerSource.Take</c> (Task 9). These are the parts that
+    /// can be checked without the game: how much a pull may remove (clamped to what the drawer holds,
+    /// and nothing at all when the items would have nowhere to go — otherwise the pull would destroy
+    /// them, the design's top anti-goal); how the amount is split into stack-sized chunks; and
+    /// whether a chunk's delivery is guaranteed to be accepted, matched on the same predicate the
+    /// delivery itself uses (name, quality and world level).
     /// <para>
-    /// The delivery itself (resolving the prefab through <c>ObjectDB</c> and adding it to the
-    /// player's <c>Inventory</c>) is game-facing and is not covered here; see the task report.
+    /// The game-facing materialisation around these decisions — resolving the prefab through
+    /// <c>ObjectDB</c>, reading the destination's <c>Inventory</c> and calling
+    /// <c>Inventory.AddItem(ItemData)</c> / <c>ForceRemove</c> — is not covered here; see the task
+    /// report.
     /// </para>
     /// </summary>
     [TestFixture]
@@ -45,10 +50,10 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             Assert.That(DrawerTake.AmountToRemove(5, -3, true), Is.EqualTo(0));
         }
 
-        // Inventory.AddItem(GameObject, int) places AT MOST ONE stack: it clones the prefab's item
-        // data, sets m_stack = Min(amount, m_maxStackSize) and adds a single ItemData. A request
-        // larger than one stack must therefore be delivered in stack-sized chunks, or every item
-        // beyond the first stack is silently destroyed. These tests pin that chunk decision.
+        // Delivery is chunked to at most one stack at a time. That is what lets the gate
+        // (CanDeliver) be an exact prediction of the delivery: a chunk larger than a stack could no
+        // longer be placed from matching free space plus a single empty slot. An amount larger than
+        // one stack must therefore be split; these tests pin that chunk decision.
 
         [Test]
         public void NextChunk_RequestExceedingOneStack_YieldsOneStackAtATime()
@@ -116,6 +121,159 @@ namespace CraftFromDrawersAndChests.Tests.Logic
                 delivered += chunk;
 
             Assert.That(delivered, Is.EqualTo(take));
+        }
+
+        // The gate that decides whether a chunk may be removed must agree with the delivery. The
+        // game's Inventory.AddItem(ItemData) merges only into a stack whose name, quality AND world
+        // level all match (FindFreeStackItem); Inventory.CanAddItem sums FindFreeStackSpace, which
+        // ignores quality. Gating on CanAddItem therefore accepts a chunk AddItem then refuses — a
+        // same-name partial stack of a different quality with no empty slot — removing items that
+        // are then destroyed. These tests pin the quality/world-level aware gate that replaces it.
+
+        private static DrawerTake.InventoryStack Stack(string name, int quality, int worldLevel, int stack, int maxStack)
+        {
+            return new DrawerTake.InventoryStack(name, quality, worldLevel, stack, maxStack);
+        }
+
+        [Test]
+        public void MatchingFreeStackSpace_CountsOnlyNameQualityAndWorldLevelMatches()
+        {
+            var inventory = new[]
+            {
+                Stack("$item_wood", 1, 0, 5, 20),   // matches: 15 free
+                Stack("$item_wood", 1, 0, 20, 20),  // matching but full: contributes nothing
+                Stack("$item_wood", 2, 0, 5, 20),   // same name, different quality: ignored
+                Stack("$item_wood", 1, 1, 5, 20),   // same name/quality, different world level: ignored
+                Stack("$item_stone", 1, 0, 5, 20),  // different name: ignored
+            };
+
+            Assert.That(DrawerTake.MatchingFreeStackSpace("$item_wood", 1, 0, inventory), Is.EqualTo(15));
+        }
+
+        [Test]
+        public void MatchingFreeStackSpace_NoInventoryOrNoName_IsZero()
+        {
+            Assert.That(DrawerTake.MatchingFreeStackSpace("$item_wood", 1, 0, null), Is.EqualTo(0));
+            Assert.That(DrawerTake.MatchingFreeStackSpace(null, 1, 0, new DrawerTake.InventoryStack[0]), Is.EqualTo(0));
+            Assert.That(DrawerTake.MatchingFreeStackSpace(string.Empty, 1, 0, new DrawerTake.InventoryStack[0]), Is.EqualTo(0));
+        }
+
+        [Test]
+        public void MatchingFreeStackSpace_SumsAcrossEveryMatchingStack()
+        {
+            // Inventory.AddItem(ItemData) merges one item at a time, repeatedly taking the first
+            // matching stack with room, so its usable free space is the SUM over every matching
+            // stack, not just the largest one. This pins that summation (the crux of mirroring the
+            // merge): a chunk of 18 fits the two partial stacks (15 + 3) even with no empty slot.
+            var inventory = new[]
+            {
+                Stack("$item_wood", 1, 0, 5, 20),  // 15 free
+                Stack("$item_wood", 1, 0, 17, 20), // 3 free
+                Stack("$item_wood", 1, 0, 20, 20), // matching but full
+                Stack("$item_stone", 1, 0, 1, 20), // other item
+            };
+
+            Assert.That(DrawerTake.MatchingFreeStackSpace("$item_wood", 1, 0, inventory), Is.EqualTo(18));
+            Assert.That(DrawerTake.CanDeliver(18, 20, 18, 0), Is.True, "the whole sum is usable");
+            Assert.That(DrawerTake.CanDeliver(19, 20, 18, 0), Is.False, "one over the sum, no empty slot");
+        }
+
+        [Test]
+        public void TheDefectCase_SameNameDifferentQualityWithNoEmptySlot_IsRefused()
+        {
+            // A single partial stack of the same item at a DIFFERENT quality, and no empty slot. The
+            // old gate (CanAddItem -> FindFreeStackSpace, quality-agnostic) reports room here, but
+            // AddItem cannot merge into the quality-2 stack and has no empty slot, so it would
+            // refuse the chunk after the drawer had already given it up.
+            var inventory = new[] { Stack("$item_wood", 2, 0, 5, 20) };
+
+            int free = DrawerTake.MatchingFreeStackSpace("$item_wood", 1, 0, inventory);
+            Assert.That(free, Is.EqualTo(0), "a different-quality stack is not free space for this delivery");
+
+            Assert.That(DrawerTake.CanDeliver(1, 20, free, 0), Is.False, "no room -> the chunk is not removed");
+
+            // A single empty slot makes the very same chunk deliverable.
+            Assert.That(DrawerTake.CanDeliver(1, 20, free, 1), Is.True);
+        }
+
+        [Test]
+        public void CanDeliver_FitsMatchingFreeSpaceOrAnEmptySlotButNeverMoreThanOneStack()
+        {
+            Assert.That(DrawerTake.CanDeliver(10, 20, 10, 0), Is.True);   // exactly the free space
+            Assert.That(DrawerTake.CanDeliver(11, 20, 10, 0), Is.False);  // one over, no empty slot
+            Assert.That(DrawerTake.CanDeliver(15, 20, 0, 1), Is.True);    // an empty slot holds a stack
+            Assert.That(DrawerTake.CanDeliver(20, 20, 0, 1), Is.True);
+            Assert.That(DrawerTake.CanDeliver(21, 20, 40, 5), Is.False);  // never rely on over-filling a stack
+            Assert.That(DrawerTake.CanDeliver(0, 20, 40, 5), Is.False);
+            Assert.That(DrawerTake.CanDeliver(5, 0, 40, 5), Is.False);    // unusable stack size
+            Assert.That(DrawerTake.CanDeliver(5, 20, -1, 0), Is.False);   // negative space is not room
+        }
+
+        [Test]
+        public void CanDeliver_AgreesWithAStackByStackAddItemSimulation()
+        {
+            var inventories = new[]
+            {
+                new[] { Stack("$item_wood", 1, 0, 19, 20) },
+                new[] { Stack("$item_wood", 2, 0, 19, 20) },
+                new[] { Stack("$item_wood", 1, 1, 19, 20) },
+                new[] { Stack("$item_wood", 1, 0, 20, 20) },
+                new[] { Stack("$item_wood", 1, 0, 5, 20), Stack("$item_wood", 2, 0, 5, 20) },
+                // Two (or more) matching partial stacks: the merge can use both, so their free
+                // space sums; a different-quality stack beside them is still ignored.
+                new[] { Stack("$item_wood", 1, 0, 5, 20), Stack("$item_wood", 1, 0, 3, 20) },
+                new[]
+                {
+                    Stack("$item_wood", 1, 0, 5, 20),
+                    Stack("$item_wood", 1, 0, 3, 20),
+                    Stack("$item_wood", 2, 0, 4, 20),
+                    Stack("$item_stone", 1, 0, 1, 20),
+                },
+                new DrawerTake.InventoryStack[0],
+            };
+
+            const int maxStack = 20;
+            foreach (var inventory in inventories)
+            {
+                int free = DrawerTake.MatchingFreeStackSpace("$item_wood", 1, 0, inventory);
+                for (int emptySlots = 0; emptySlots <= 2; emptySlots++)
+                {
+                    // chunk is capped at one stack: Take never passes more (NextChunk).
+                    for (int chunk = 1; chunk <= maxStack; chunk++)
+                    {
+                        bool expected = SimulateAddItem("$item_wood", 1, 0, chunk, maxStack, emptySlots, inventory);
+                        Assert.That(
+                            DrawerTake.CanDeliver(chunk, maxStack, free, emptySlots), Is.EqualTo(expected),
+                            "chunk=" + chunk + " emptySlots=" + emptySlots);
+                    }
+                }
+            }
+        }
+
+        // A small model of Inventory.AddItem(ItemData): place the chunk one item at a time into the
+        // first matching (name + quality + world level) stack with room; for whatever is left, use a
+        // single empty slot (the game writes the remainder into one slot). Returns false only when
+        // neither is possible.
+        private static bool SimulateAddItem(
+            string name, int quality, int worldLevel, int chunk, int maxStack, int emptySlots,
+            DrawerTake.InventoryStack[] inventory)
+        {
+            int remaining = chunk;
+            foreach (var stack in inventory)
+            {
+                if (stack.Name != name || stack.Quality != quality || stack.WorldLevel != worldLevel)
+                    continue;
+
+                int space = stack.MaxStack - stack.Stack;
+                if (space <= 0)
+                    continue;
+
+                remaining -= Math.Min(space, remaining);
+                if (remaining == 0)
+                    return true;
+            }
+
+            return remaining <= maxStack && emptySlots >= 1;
         }
     }
 }
