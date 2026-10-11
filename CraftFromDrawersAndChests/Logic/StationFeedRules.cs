@@ -101,6 +101,13 @@ namespace CraftFromDrawersAndChests.Logic
         /// A station with no room left asks for nothing, with or without the modifier, so a full
         /// station is never fed and never costs the player stock.
         /// </para>
+        /// <para>
+        /// This is the station-capacity half of the request only, and therefore the <i>most</i> an
+        /// interaction may ask storage for. The fill path caps it further to what the destination
+        /// inventory can actually accept and accepts <c>min(available, requested)</c> from storage
+        /// (see <c>PullEngine.PullToInventoryFill</c>), so holding the modifier never pulls less than
+        /// releasing it does.
+        /// </para>
         /// </summary>
         /// <param name="fillAll">Whether the fill-all modifier is held.</param>
         /// <param name="remaining">How many whole items the station can still take; see

@@ -84,6 +84,12 @@ namespace CraftFromDrawersAndChests.Logic
     /// complete set of removals to perform. When it is false the plan is all-or-nothing: nothing
     /// may be consumed, so <see cref="Lines"/> is empty and <see cref="MissingItemNames"/> names
     /// every requirement that could not be filled, in request order. Neither list is ever null.
+    /// <para>
+    /// A <b>fill</b> plan (see <see cref="PullPlan.Plan"/>'s <c>fillUpTo</c>) is never infeasible for
+    /// a shortfall: a request storage can only partly cover yields lines for the part it <i>can</i>
+    /// cover, and <see cref="MissingItemNames"/> stays empty, because a fill asks for a maximum
+    /// rather than a fixed amount.
+    /// </para>
     /// </summary>
     public sealed class PullPlanResult
     {
@@ -125,12 +131,27 @@ namespace CraftFromDrawersAndChests.Logic
         /// entirely — it neither produces a line nor counts as missing. The caller passes true
         /// only when the player is actually at an upgrader.
         /// </param>
+        /// <param name="fillUpTo">
+        /// When false (the default) a request is a <b>fixed amount</b> and a shortfall on any one of
+        /// them discards the whole plan — the all-or-nothing rule that keeps a craft from being paid
+        /// for out of storage and then not happen.
+        /// <para>
+        /// When true the plan is a <b>fill</b>: each request asks for its amount but accepts
+        /// <c>min(available, requested)</c>, so a request storage can only partly cover still yields
+        /// lines for the part it can cover and is not reported missing. A fill is a different
+        /// operation from a craft — "take as much as is available, up to the station's remaining
+        /// capacity" — and must never be refused wholesale merely because storage cannot cover the
+        /// whole amount (R31). A request with no stock at all simply produces no line; the caller
+        /// then behaves exactly as the unmodified interaction does.
+        /// </para>
+        /// </param>
         public static PullPlanResult Plan(
             IReadOnlyList<PullRequest> requests,
             IReadOnlyList<StorageStock> stocks,
             bool leaveOne,
             bool byDistance,
-            bool allowUpgraderResources)
+            bool allowUpgraderResources,
+            bool fillUpTo = false)
         {
             if (requests == null)
                 requests = Array.Empty<PullRequest>();
@@ -185,7 +206,10 @@ namespace CraftFromDrawersAndChests.Logic
                     lines.Add(new PullLine(stocks[index].SourceId, request.ItemName, take));
                 }
 
-                if (needed > 0)
+                // A shortfall only fails the plan for a fixed-amount request. A fill asks for a
+                // maximum, so what the walk found is the whole answer: the lines already added stand,
+                // nothing is recorded missing and the plan stays feasible — even when it is empty.
+                if (needed > 0 && !fillUpTo)
                     missing.Add(request.ItemName);
             }
 

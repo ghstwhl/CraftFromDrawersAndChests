@@ -100,17 +100,27 @@ namespace CraftFromDrawersAndChests.Patches
         /// Builds the status report from the live world: the eligible sources within range of the local
         /// player, and whether the Item Drawers API resolved. With no player loaded there is no origin
         /// to measure from, so the counts are reported as unknown rather than as zero.
+        /// <para>
+        /// The configuration snapshot is guarded exactly as <see cref="Reset"/> guards it, and for the
+        /// same reason: <see cref="PullEngine.Collect"/> reads the eligible sources through it
+        /// (<c>StorageRegistry.Collect</c> dereferences its range and its chest/drawer switches), so a
+        /// null snapshot would make this prefix throw instead of printing a report. There is nothing
+        /// to measure with, so the counts are reported as unknown, naming which piece was missing.
+        /// </para>
         /// </summary>
         private static string StatusReport()
         {
             Player player = Player.m_localPlayer;
-            if (player == null)
-                return ConsoleCommandRules.StatusReport(false, 0, 0, DrawerApi.IsAvailable);
+            FeatureFlags flags = PluginConfig.Flags;
+
+            if (player == null || flags == null)
+                return ConsoleCommandRules.StatusReport(false, 0, 0, DrawerApi.IsAvailable,
+                    player == null ? "no player is loaded" : "the config is not ready");
 
             Vector3 position = player.transform.position;
             var origin = new Vec3(position.x, position.y, position.z);
 
-            IReadOnlyList<IStorageSource> sources = PullEngine.Collect(origin, PluginConfig.Flags);
+            IReadOnlyList<IStorageSource> sources = PullEngine.Collect(origin, flags);
             int chests = 0;
             int drawers = 0;
             for (int i = 0; i < sources.Count; i++)

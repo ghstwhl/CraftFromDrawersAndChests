@@ -69,6 +69,17 @@ namespace CraftFromDrawersAndChests.Patches
     /// remarks above.
     /// </para>
     /// <para>
+    /// <b>A fill is not a craft (R31).</b> The fill-all request is planned as a <b>fill</b>, through
+    /// <see cref="PullEngine.PullToInventoryFill"/>: it asks for the whole remaining capacity but
+    /// accepts <c>min(available, requested)</c>, so a base that can only spare part of that capacity
+    /// still feeds the station that part. Planning it as a fixed amount would be all-or-nothing (see
+    /// <see cref="PullPlan.Plan"/>), so a base short of the whole remaining capacity would move
+    /// <i>nothing</i> — strictly worse than releasing the key, whose one-item request the base can
+    /// usually cover. The released interaction keeps the all-or-nothing plan unchanged; the request is
+    /// still only the shortfall below what the player already carries, and the destination is still
+    /// proved for whatever is actually taken.
+    /// </para>
+    /// <para>
     /// <b>The hint.</b> The smelter's fuel and ore hovers also advertise the modifier with the bracketed
     /// "[key+Use] … max" line CraftFromContainers appends (CFC lines 429-455). The text is
     /// <see cref="StationFeedRules.FillAllHint"/> and the two postfixes mirror CFC's own; the fireplace,
@@ -254,11 +265,12 @@ namespace CraftFromDrawersAndChests.Patches
         /// <b>Fill-all.</b> While the fill-all modifier is held the pull asks storage for the whole
         /// remaining capacity instead of a single item — CraftFromContainers' own
         /// <c>amount = pullAll ? Mathf.Min(m_maxFuel - CeilToInt(fuel), stack) : 1</c>, CFC line 317 —
-        /// and the "the player already carries the fuel" guard above is lifted, as CFC's
+        /// taken as far as storage allows rather than all-or-nothing (see the class remarks on
+        /// fill-all), and the "the player already carries the fuel" guard above is lifted, as CFC's
         /// <c>inventory.HaveItem(...) &amp;&amp; !pullAll</c> (line 280) does. Because this port delivers
         /// into the interacting player's inventory and leaves the station to vanilla's own consumption
         /// of one item per interaction, the fetched stack is fed to the fire over the following
-        /// interactions rather than all at once; see the class remarks on fill-all.
+        /// interactions rather than all at once.
         /// </para>
         /// </summary>
         [HarmonyPatch(typeof(Fireplace), "Interact")]
@@ -303,7 +315,7 @@ namespace CraftFromDrawersAndChests.Patches
                 return true;
 
             PullFromStorage(player, __instance.transform.position, prefab, fuelItem, flags,
-                StationFeedRules.FillAmount(fillAll, remaining));
+                StationFeedRules.FillAmount(fillAll, remaining), fillAll);
             return true;
         }
 
@@ -365,7 +377,8 @@ namespace CraftFromDrawersAndChests.Patches
 
             PullFirstInputs(
                 player, __instance.transform.position,
-                inputs, flags.OreDisallowTypes, flags, StationFeedRules.FillAmount(fillAll, remaining));
+                inputs, flags.OreDisallowTypes, flags, StationFeedRules.FillAmount(fillAll, remaining),
+                fillAll);
             return true;
         }
 
@@ -421,7 +434,7 @@ namespace CraftFromDrawersAndChests.Patches
                 return true;
 
             PullFromStorage(player, __instance.transform.position, prefab, fuelItem, flags,
-                StationFeedRules.FillAmount(fillAll, remaining));
+                StationFeedRules.FillAmount(fillAll, remaining), fillAll);
             return true;
         }
 
@@ -468,8 +481,9 @@ namespace CraftFromDrawersAndChests.Patches
                 return true;
 
             // CraftFromContainers' cooking-station fuel patch has no fill-all branch (its
-            // `pullAll` is read only in the three patches above), so this always asks for one.
-            PullFromStorage(player, __instance.transform.position, prefab, fuelItem, flags, 1);
+            // `pullAll` is read only in the three patches above), so this always asks for one — and
+            // with a request of one a fill plan and the all-or-nothing plan are the same plan.
+            PullFromStorage(player, __instance.transform.position, prefab, fuelItem, flags, 1, false);
             return true;
         }
 
@@ -550,7 +564,7 @@ namespace CraftFromDrawersAndChests.Patches
             // always asks for one.
             PullFirstInputs(
                 player, __instance.transform.position,
-                inputs, flags.OreDisallowTypes, flags, 1);
+                inputs, flags.OreDisallowTypes, flags, 1, false);
             return true;
         }
 
@@ -622,7 +636,7 @@ namespace CraftFromDrawersAndChests.Patches
                 return true;
             }
 
-            PullFromStorage(player, __instance.transform.position, ammoType, ammo, flags, 1);
+            PullFromStorage(player, __instance.transform.position, ammoType, ammo, flags, 1, false);
             return true;
         }
 
@@ -637,9 +651,18 @@ namespace CraftFromDrawersAndChests.Patches
         /// planner asks storage only for the shortfall below what the inventory already holds, so an
         /// amount the player already carries pulls nothing extra.
         /// </para>
+        /// <para>
+        /// <paramref name="fillUpTo"/> is the modifier's own flag and selects the <b>fill</b> plan
+        /// (<see cref="PullEngine.PullToInventoryFill"/>): the request asks for the whole remaining
+        /// capacity but accepts <c>min(available, requested)</c>, so a base that can only spare part
+        /// of it still feeds the station that part (Task 15b fix round 1, R31). Without it — every
+        /// unmodified interaction and every single-item call site — the request is the all-or-nothing
+        /// pull it has always been, so releasing the key behaves exactly as before.
+        /// </para>
         /// </summary>
         private static bool PullFromStorage(
-            Player player, Vector3 origin, string prefab, ItemDrop item, FeatureFlags flags, int amount)
+            Player player, Vector3 origin, string prefab, ItemDrop item, FeatureFlags flags, int amount,
+            bool fillUpTo)
         {
             if (player == null || item == null || string.IsNullOrEmpty(prefab) || flags == null || amount <= 0)
                 return false;
@@ -657,12 +680,16 @@ namespace CraftFromDrawersAndChests.Patches
                 new Piece.Requirement { m_amount = amount, m_resItem = item }
             };
 
-            bool pulled = PullEngine.PullToInventory(
-                requirements, 0, 1, inventory, Origin(origin), flags, false, out bool requested);
+            bool requested;
+            bool pulled = fillUpTo
+                ? PullEngine.PullToInventoryFill(
+                    requirements, 0, 1, inventory, Origin(origin), flags, false, out requested)
+                : PullEngine.PullToInventory(
+                    requirements, 0, 1, inventory, Origin(origin), flags, false, out requested);
 
             if (pulled && requested)
-                Debug(flags, "Station: pulled " + amount + "x '" + prefab + "' from storage into " +
-                    player.name + "'s inventory.");
+                Debug(flags, "Station: pulled up to " + amount + "x '" + prefab +
+                    "' from storage into " + player.name + "'s inventory.");
 
             return pulled && requested;
         }
@@ -674,9 +701,10 @@ namespace CraftFromDrawersAndChests.Patches
         /// smelter that accepts several ores asks for the first one the base can actually provide,
         /// exactly as CraftFromContainers' loop over <c>m_conversion</c> does.
         /// </summary>
+        /// <param name="fillUpTo">Whether the request is a fill: see <see cref="PullFromStorage"/>.</param>
         private static bool PullFirstInputs(
             Player player, Vector3 origin, List<ItemDrop> inputs, string disallowTypes, FeatureFlags flags,
-            int amount)
+            int amount, bool fillUpTo)
         {
             if (amount <= 0)
                 return false;
@@ -694,7 +722,7 @@ namespace CraftFromDrawersAndChests.Patches
                 if (StationFeedRules.IsDisallowedType(disallowTypes, prefab))
                     continue;
 
-                if (PullFromStorage(player, origin, prefab, input, flags, amount))
+                if (PullFromStorage(player, origin, prefab, input, flags, amount, fillUpTo))
                     return true;
             }
             return false;

@@ -272,6 +272,87 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             Assert.That(DestinationCapacity.CanAccept(empty, 1, upgrade), Is.True);
         }
 
+        // ---- The fill half (Task 15b fix round 1, R31): how MUCH the destination can accept. ----
+        //
+        // A fill asks storage for a station's remaining capacity. Without capping that request to the
+        // destination's own room, DestinationAllows refuses the WHOLE fill whenever the inventory has
+        // room for some but not all of it — moving nothing, i.e. fewer items than the released
+        // one-item interaction would have moved.
+
+        [Test]
+        public void AcceptableAmount_IsTheMatchingFreeSpacePlusOneStackPerEmptySlot()
+        {
+            // 15 free in a matching stack, and one empty slot of 20: exactly a stack and a half fits.
+            var inventory = new[] { Stack("$item_wood", 1, 0, 5, 20) };
+
+            Assert.That(
+                DestinationCapacity.AcceptableAmount(inventory, 1, Del("$item_wood", 35, 20), 35),
+                Is.EqualTo(35));
+            Assert.That(
+                DestinationCapacity.AcceptableAmount(inventory, 0, Del("$item_wood", 35, 20), 35),
+                Is.EqualTo(15));
+            Assert.That(
+                DestinationCapacity.AcceptableAmount(new DrawerTake.InventoryStack[0], 2, Del("$item_wood", 40, 20), 40),
+                Is.EqualTo(40));
+        }
+
+        [Test]
+        public void AcceptableAmount_IsCappedByTheRequest()
+        {
+            // A fill asks for the station's remaining capacity, which is also the amount to consider.
+            var empty = new DrawerTake.InventoryStack[0];
+
+            Assert.That(DestinationCapacity.AcceptableAmount(empty, 5, Del("$item_wood", 7, 20), 7), Is.EqualTo(7));
+            Assert.That(DestinationCapacity.AcceptableAmount(empty, 5, Del("$item_wood", 3, 20), 3), Is.EqualTo(3));
+        }
+
+        [Test]
+        public void AcceptableAmount_IsZeroWhenNothingCanBePlaced()
+        {
+            var full = new[] { Stack("$item_stone", 1, 0, 20, 20) };
+
+            Assert.That(DestinationCapacity.AcceptableAmount(full, 0, Del("$item_wood", 5, 20), 5), Is.EqualTo(0), "no room");
+            Assert.That(DestinationCapacity.AcceptableAmount(full, 0, Del("$item_wood", 5, 0), 5), Is.EqualTo(0), "no stack size");
+            Assert.That(DestinationCapacity.AcceptableAmount(full, 0, Del("$item_wood", 5, 20), 0), Is.EqualTo(0), "limit 0");
+            Assert.That(DestinationCapacity.AcceptableAmount(full, 0, Del("$item_wood", 5, 20), -2), Is.EqualTo(0), "negative limit");
+        }
+
+        [Test]
+        public void AcceptableAmount_IsTheLargestAmountCanAcceptTakes()
+        {
+            // The definition, checked against the very predicate the pull's delivery proof uses: the
+            // bisection must agree with a full scan, which also pins the monotonicity it relies on.
+            var inventories = new[]
+            {
+                new DrawerTake.InventoryStack[0],
+                new[] { Stack("$item_wood", 1, 0, 5, 20) },
+                new[] { Stack("$item_wood", 1, 0, 20, 20) },
+                new[] { Stack("$item_wood", 2, 0, 5, 20) },
+                new[] { Stack("$item_wood", 1, 0, 5, 20), Stack("$item_stone", 1, 0, 10, 20) },
+            };
+
+            foreach (var inventory in inventories)
+            {
+                for (int emptySlots = 0; emptySlots <= 3; emptySlots++)
+                {
+                    for (int limit = 0; limit <= 45; limit++)
+                    {
+                        int expected = 0;
+                        for (int n = 1; n <= limit; n++)
+                        {
+                            if (DestinationCapacity.CanAccept(inventory, emptySlots, new[] { Del("$item_wood", n, 20) }))
+                                expected = n;
+                        }
+
+                        Assert.That(
+                            DestinationCapacity.AcceptableAmount(inventory, emptySlots, Del("$item_wood", limit, 20), limit),
+                            Is.EqualTo(expected),
+                            "emptySlots=" + emptySlots + " limit=" + limit);
+                    }
+                }
+            }
+        }
+
         // A faithful model of Inventory.AddItem(ItemData) driven chunk by chunk: merge one item at a
         // time into the first matching (name + quality + world level) stack with room, and when none is
         // found write the whole remainder into ONE empty slot that then joins the matching stacks.

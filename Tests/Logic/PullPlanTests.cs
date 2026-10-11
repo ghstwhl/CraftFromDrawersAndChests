@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using CraftFromDrawersAndChests.Logic;
 using NUnit.Framework;
 
@@ -22,9 +23,10 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             StorageStock[] stocks,
             bool leaveOne = false,
             bool byDistance = false,
-            bool allowUpgraderResources = true)
+            bool allowUpgraderResources = true,
+            bool fillUpTo = false)
         {
-            return PullPlan.Plan(requests, stocks, leaveOne, byDistance, allowUpgraderResources);
+            return PullPlan.Plan(requests, stocks, leaveOne, byDistance, allowUpgraderResources, fillUpTo);
         }
 
         /// <summary>Total amount every line draws from one source; proves a stock is never over-drawn.</summary>
@@ -162,6 +164,88 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             Assert.That(result.Lines, Has.Count.EqualTo(1));
             Assert.That(result.Lines[0].ItemName, Is.EqualTo("Coal"));
             Assert.That(result.MissingItemNames, Is.Empty);
+        }
+
+        // ---------------- The fill plan (Task 15b fix round 1, R31) ----------------
+        //
+        // A fill is not a craft: it asks for a maximum (a station's whole remaining capacity) and must
+        // accept min(available, requested). Planning it all-or-nothing is exactly the inversion this
+        // round fixes — a base short of the whole capacity moved NOTHING, so holding the fill key
+        // pulled fewer items than releasing it (whose one-item request the base can usually cover).
+
+        [Test]
+        public void Fill_PartlyCoveredRequest_TakesWhatIsAvailable()
+        {
+            var result = Plan(new[] { Req("Wood", 5) }, new[] { Stock("c1", "Wood", 2) }, fillUpTo: true);
+
+            Assert.That(result.Feasible, Is.True);
+            Assert.That(result.Lines, Has.Count.EqualTo(1));
+            Assert.That(result.Lines[0].Amount, Is.EqualTo(2));
+            Assert.That(result.MissingItemNames, Is.Empty);
+        }
+
+        [Test]
+        public void Fill_StoreCannotCoverAnyOfIt_IsEmptyButFeasible()
+        {
+            // Storage can supply nothing, so the fill moves nothing and reports a no-op rather than a
+            // refusal: the caller then behaves exactly as the unmodified interaction does.
+            var result = Plan(new[] { Req("Wood", 5) }, new StorageStock[0], fillUpTo: true);
+
+            Assert.That(result.Feasible, Is.True);
+            Assert.That(result.Lines, Is.Empty);
+            Assert.That(result.MissingItemNames, Is.Empty);
+        }
+
+        [Test]
+        public void Fill_AcrossSources_TakesEveryOneOfThem()
+        {
+            var result = Plan(
+                new[] { Req("Wood", 9) },
+                new[] { Stock("c1", "Wood", 2), Stock("c2", "Wood", 3) },
+                fillUpTo: true);
+
+            Assert.That(result.Feasible, Is.True);
+            Assert.That(result.Lines, Has.Count.EqualTo(2));
+            Assert.That(SumFor(result, "c1") + SumFor(result, "c2"), Is.EqualTo(5));
+        }
+
+        [Test]
+        public void Fill_NeverTakesMoreThanItAskedFor()
+        {
+            var result = Plan(new[] { Req("Wood", 3) }, new[] { Stock("c1", "Wood", 10) }, fillUpTo: true);
+
+            Assert.That(result.Feasible, Is.True);
+            Assert.That(result.Lines, Has.Count.EqualTo(1));
+            Assert.That(result.Lines[0].Amount, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void Fill_HoldingTheFillKeyNeverPullsLessThanReleasingIt()
+        {
+            // R31's minimum bar, composed exactly where the inversion lived: the station's own request
+            // (StationFeedRules.FillAmount) fed to this planner with and without the fill flag, over
+            // every storage amount and every station capacity. The released key asks for one item with
+            // the fixed-amount plan; the held key asks for the whole remaining capacity as a fill. The
+            // fill must never deliver less — on the unfixed planner it delivered nothing whenever the
+            // whole capacity was not in storage.
+            for (int available = 0; available <= 6; available++)
+            {
+                for (int remaining = 1; remaining <= 6; remaining++)
+                {
+                    int released = Plan(
+                        new[] { Req("Wood", StationFeedRules.FillAmount(false, remaining)) },
+                        new[] { Stock("c1", "Wood", available) }).Lines.Sum(l => l.Amount);
+
+                    int held = Plan(
+                        new[] { Req("Wood", StationFeedRules.FillAmount(true, remaining)) },
+                        new[] { Stock("c1", "Wood", available) },
+                        fillUpTo: true).Lines.Sum(l => l.Amount);
+
+                    Assert.That(
+                        held, Is.GreaterThanOrEqualTo(released),
+                        "available=" + available + " remaining=" + remaining);
+                }
+            }
         }
     }
 }

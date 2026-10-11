@@ -140,6 +140,62 @@ namespace CraftFromDrawersAndChests.Logic
         }
 
         /// <summary>
+        /// How many items of <paramref name="delivery"/>'s item (name, quality, world level and stack
+        /// size) the destination described by <paramref name="stacks"/> and
+        /// <paramref name="emptySlots"/> can accept — the largest <c>n</c> in <c>[0, limit]</c> for
+        /// which <see cref="CanAccept"/> holds. Zero when the delivery can never be placed, or when
+        /// <paramref name="limit"/> is not positive.
+        /// <para>
+        /// This is the <b>fill</b> half of the destination question (Task 15b fix round 1, R31): a
+        /// fill asks storage for a station's remaining capacity, and asking for more than the
+        /// destination can accept would make <see cref="CanAccept"/> refuse the whole request and
+        /// deliver nothing — pulling <i>less</i> than the single-item interaction it is meant to
+        /// improve on. Capping the request to this amount lets the fill take as much as the
+        /// destination actually has room for.
+        /// </para>
+        /// <para>
+        /// The amount is found by bisection <b>through</b> <see cref="CanAccept"/> rather than by
+        /// re-deriving its chunking, so the two cannot drift apart: a destination that accepts
+        /// <c>n</c> items accepts every smaller number too (delivering less can only use less room),
+        /// so the predicate is monotone in the amount and the binary search is exact. CanAccept
+        /// charges results in the same order the game places them.
+        /// </para>
+        /// </summary>
+        /// <param name="stacks">The destination's current stacks, as the pure merge view; may be null.</param>
+        /// <param name="emptySlots">How many empty destination slots there are; may be zero.</param>
+        /// <param name="delivery">The item to be placed; its <see cref="Delivery.Amount"/> is ignored in favour of the search.</param>
+        /// <param name="limit">The largest amount to consider, i.e. the fill's own request; not positive asks for nothing.</param>
+        public static int AcceptableAmount(
+            IReadOnlyList<DrawerTake.InventoryStack> stacks,
+            int emptySlots,
+            Delivery delivery,
+            int limit)
+        {
+            if (limit <= 0 || delivery.MaxStack <= 0)
+                return 0;
+
+            // One reusable single-delivery list: zero items is trivially acceptable, which anchors
+            // the search, and every probe asks the very question Execute will face.
+            var probe = new List<Delivery>(1);
+
+            int low = 0;
+            int high = limit;
+            while (low < high)
+            {
+                int mid = low + (high - low + 1) / 2;
+                probe.Clear();
+                probe.Add(new Delivery(
+                    delivery.Name, delivery.Quality, delivery.WorldLevel, mid, delivery.MaxStack));
+
+                if (CanAccept(stacks, emptySlots, probe))
+                    low = mid;
+                else
+                    high = mid - 1;
+            }
+            return low;
+        }
+
+        /// <summary>
         /// The most a crafting-skill bonus can add to a craft's output, <b>on top of</b> the recipe's own
         /// <c>Recipe.GetAmount</c> (Task 13 fix round 4, R8).
         /// <para>

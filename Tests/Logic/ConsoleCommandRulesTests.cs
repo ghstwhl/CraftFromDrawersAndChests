@@ -133,6 +133,17 @@ namespace CraftFromDrawersAndChests.Tests.Logic
         }
 
         [Test]
+        public void StatusReport_AnUnmeasurableCount_NamesTheReasonItCouldNotBeMeasured()
+        {
+            // The other way the count can be unmeasurable is a missing configuration snapshot (the
+            // game-facing patch guards it exactly as reset does); the report must name that reason
+            // rather than blame the player.
+            Assert.That(
+                ConsoleCommandRules.StatusReport(false, 0, 0, false, "the config is not ready"),
+                Is.EqualTo("Sources in range: unknown (the config is not ready)\nItem Drawers API: not resolved (chest-only)"));
+        }
+
+        [Test]
         public void StatusReport_NegativeCounts_ClampAtZero()
         {
             Assert.That(

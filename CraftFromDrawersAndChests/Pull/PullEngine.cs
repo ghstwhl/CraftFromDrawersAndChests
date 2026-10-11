@@ -266,18 +266,24 @@ namespace CraftFromDrawersAndChests.Pull
         /// <paramref name="allowUpgraderResources"/> flag is passed straight to
         /// <see cref="PullPlan.Plan"/>: false skips upgrader requirements entirely rather than
         /// failing on them, which is what a player not at an upgrader needs.
+        /// <para>
+        /// <paramref name="fillUpTo"/> is also passed straight through: false (the default) is the
+        /// all-or-nothing craft plan, true is a fill that accepts <c>min(available, requested)</c>
+        /// (see <see cref="PullPlan.Plan"/>'s <c>fillUpTo</c> and <see cref="PullToInventoryFill"/>).
+        /// </para>
         /// </summary>
         public static PullPlanResult Plan(
             IReadOnlyList<PullRequest> requests,
             IReadOnlyList<IStorageSource> sources,
             Vec3 origin,
             FeatureFlags flags,
-            bool allowUpgraderResources)
+            bool allowUpgraderResources,
+            bool fillUpTo = false)
         {
             IReadOnlyList<StorageStock> stocks = BuildStocks(sources, requests, origin);
             bool leaveOne = flags != null && flags.LeaveOne;
             bool byDistance = flags != null && flags.PullByDistance;
-            return PullPlan.Plan(requests, stocks, leaveOne, byDistance, allowUpgraderResources);
+            return PullPlan.Plan(requests, stocks, leaveOne, byDistance, allowUpgraderResources, fillUpTo);
         }
 
         /// <summary>
@@ -403,15 +409,76 @@ namespace CraftFromDrawersAndChests.Pull
             Inventory destination, Vec3 origin, FeatureFlags flags, bool allowUpgraderResources,
             out bool requested)
         {
+            return PullToInventoryCore(
+                requirements, qualityLevel, multiplier, destination, origin, flags,
+                allowUpgraderResources, false, out requested);
+        }
+
+        /// <summary>
+        /// The <b>fill</b> form of <see cref="PullToInventory"/> (Task 15b fix round 1, R31): the same
+        /// shortfall-based pull into any inventory, but planned as a <b>fill</b> rather than as a
+        /// craft. Storage is asked for up to <c>max(available, requested)</c> — here, the requested
+        /// amount — and the pull accepts <c>min(available, requested)</c>, so a request storage can
+        /// only partly cover still moves the part it can cover instead of refusing everything.
+        /// <para>
+        /// Station feeding uses it while the fill-all modifier is held: the request is the station's
+        /// whole remaining capacity, and a base that can only spare part of it must still feed the
+        /// station that part. Planning the same request all-or-nothing is strictly worse than not
+        /// using the key at all — the released interaction asks for one item, which the base can
+        /// usually cover, while the held one asked for everything and got nothing.
+        /// </para>
+        /// <para>
+        /// Every other rule is unchanged: the request is still only the shortfall below what the
+        /// destination already holds, the amount is first capped to what the destination can actually
+        /// accept (so the fill can never be refused wholesale by room it does not have), and
+        /// <see cref="DestinationAllows"/> still proves the destination for whatever is actually
+        /// taken. A request with no stock at all produces no plan lines at all and is reported as a
+        /// no-op — the caller then behaves exactly as the unmodified interaction does.
+        /// </para>
+        /// </summary>
+        /// <param name="requirements">The station's requirement; may be null, which has nothing to fetch.</param>
+        /// <param name="qualityLevel">The quality the requirement is evaluated at (0 or 1 for a station feed).</param>
+        /// <param name="multiplier">How many are being pulled (1 unless multicrafting).</param>
+        /// <param name="destination">Where the pulled items are delivered, and whose held stock reduces the request; null refuses.</param>
+        /// <param name="origin">The world position the eligible storage is measured from.</param>
+        /// <param name="flags">The resolved configuration snapshot; null refuses.</param>
+        /// <param name="allowUpgraderResources">Whether an upgrader resource requirement may be planned at all (false for a station).</param>
+        /// <param name="requested">Whether the pull had anything to fetch; false means a no-op pull.</param>
+        public static bool PullToInventoryFill(
+            Piece.Requirement[] requirements, int qualityLevel, int multiplier,
+            Inventory destination, Vec3 origin, FeatureFlags flags, bool allowUpgraderResources,
+            out bool requested)
+        {
+            return PullToInventoryCore(
+                requirements, qualityLevel, multiplier, destination, origin, flags,
+                allowUpgraderResources, true, out requested);
+        }
+
+        /// <summary>
+        /// The one implementation behind <see cref="PullToInventory"/> and
+        /// <see cref="PullToInventoryFill"/>: they differ only in whether the plan is all-or-nothing
+        /// or a fill, so everything else — the shortfall, the collection of sources, the destination
+        /// proof, the execution — is shared and cannot drift between the craft pull and the fill.
+        /// </summary>
+        private static bool PullToInventoryCore(
+            Piece.Requirement[] requirements, int qualityLevel, int multiplier,
+            Inventory destination, Vec3 origin, FeatureFlags flags, bool allowUpgraderResources,
+            bool fillUpTo, out bool requested)
+        {
             requested = false;
             if (destination == null || flags == null)
                 return false;
 
             // PlanFor is the single planning entry point: it collects the eligible sources once and
-            // asks storage only for the shortfall below what the destination carries.
-            PullPlanResult plan = PlanFor(
-                requirements, qualityLevel, multiplier, destination, origin, flags, allowUpgraderResources,
-                out IReadOnlyList<IStorageSource> sources);
+            // asks storage only for the shortfall below what the destination carries. A fill's
+            // requests are first capped to what the destination can accept, so the fill is never
+            // declined by room it does not have (see CapToDestination).
+            IReadOnlyList<IStorageSource> sources = Collect(origin, flags);
+            PullRequest[] requests = BuildShortfallRequests(requirements, qualityLevel, multiplier, destination);
+            if (fillUpTo)
+                requests = CapToDestination(requests, requirements, destination);
+
+            PullPlanResult plan = Plan(requests, sources, origin, flags, allowUpgraderResources, fillUpTo);
 
             // Nothing to fetch: no requirements at all, or the destination already holds every one of
             // them. The pull is a no-op, so report nothing rather than a misleading success or room
@@ -429,6 +496,66 @@ namespace CraftFromDrawersAndChests.Pull
                 return false;
 
             return Execute(plan, sources, destination);
+        }
+
+        /// <summary>
+        /// The fill's requests with each amount capped to what <paramref name="destination"/> can
+        /// actually accept, measured by the pure <see cref="DestinationCapacity.AcceptableAmount"/>
+        /// over the item the matching requirement names. Only a fill caps: a fixed-amount pull keeps
+        /// its amount and lets <see cref="DestinationAllows"/> decline it whole when it does not fit,
+        /// which is the craft rule.
+        /// <para>
+        /// This is what keeps the fill's promise — "holding the key must never pull less than
+        /// releasing it" — when the destination, rather than storage, is the constraint. Without it a
+        /// held fill for a station's whole remaining capacity would be refused by
+        /// <see cref="DestinationAllows"/> whenever the inventory had room for some but not all of it,
+        /// moving nothing, while the released one-item request would have moved its item.
+        /// <see cref="DestinationAllows"/> still runs afterwards, over whatever lines the capped plan
+        /// produced, so the destination is still proved for the amount actually taken.
+        /// </para>
+        /// <para>
+        /// A request whose item cannot be described, or whose stack size is not positive, is passed
+        /// through untouched: it produces no line either way.
+        /// </para>
+        /// </summary>
+        private static PullRequest[] CapToDestination(
+            PullRequest[] requests, Piece.Requirement[] requirements, Inventory destination)
+        {
+            if (requests == null || requests.Length == 0)
+                return requests;
+
+            List<DrawerTake.InventoryStack> stacks = null;
+            int emptySlots = 0;
+
+            var capped = new PullRequest[requests.Length];
+            for (int i = 0; i < requests.Length; i++)
+            {
+                PullRequest request = requests[i];
+                ItemDrop.ItemData data = ItemDataOf(FindRequirement(requirements, request.ItemName));
+                if (data == null || data.m_shared == null || data.m_shared.m_maxStackSize <= 0)
+                {
+                    capped[i] = request;
+                    continue;
+                }
+
+                // The destination is read at most once, on the first request that can be described.
+                if (stacks == null)
+                {
+                    stacks = InventoryStacks(destination);
+                    emptySlots = DestinationEmptySlots(destination);
+                }
+
+                var delivery = new DestinationCapacity.Delivery(
+                    data.m_shared.m_name, data.m_quality, data.m_worldLevel,
+                    request.Amount, data.m_shared.m_maxStackSize);
+                int acceptable = DestinationCapacity.AcceptableAmount(
+                    stacks, emptySlots, delivery, request.Amount);
+
+                capped[i] = acceptable >= request.Amount
+                    ? request
+                    : new PullRequest(request.Prefab, request.ItemName, acceptable, request.IsUpgraderResource);
+            }
+            return capped;
         }
 
         /// <summary>

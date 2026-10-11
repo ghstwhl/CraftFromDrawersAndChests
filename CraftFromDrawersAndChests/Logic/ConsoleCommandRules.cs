@@ -130,21 +130,27 @@ namespace CraftFromDrawersAndChests.Logic
         /// and drawers, and whether the Item Drawers API resolved. The counts are the pull engine's
         /// own eligible-source count, so the number the player sees is the number a pull would use.
         /// <para>
-        /// With no player loaded — the main menu, or a dedicated server's console — there is no origin
-        /// to measure from, so the source count is reported as unknown rather than as zero, and the
-        /// drawer line is still reported because it is a property of the loaded assemblies rather than
-        /// of the world.
+        /// When the count cannot be measured — no local player to measure <i>from</i> (the main menu,
+        /// or a dedicated server's console), or no configuration snapshot to measure <i>with</i> — the
+        /// source count is reported as unknown rather than as zero,
+        /// <paramref name="unknownReason"/> naming which, and the drawer line is still reported
+        /// because it is a property of the loaded assemblies rather than of the world.
         /// </para>
         /// </summary>
-        /// <param name="playerLoaded">Whether a local player exists to measure storage from.</param>
+        /// <param name="measurable">Whether the source count could be measured at all.</param>
         /// <param name="chestCount">How many eligible chests are in range.</param>
         /// <param name="drawerCount">How many eligible drawers are in range.</param>
         /// <param name="drawerApiResolved">Whether the Item Drawers API resolved this session.</param>
+        /// <param name="unknownReason">
+        /// Why the count is unknown, shown in parentheses; ignored when
+        /// <paramref name="measurable"/> is true. Defaults to the no-player wording.
+        /// </param>
         public static string StatusReport(
-            bool playerLoaded, int chestCount, int drawerCount, bool drawerApiResolved)
+            bool measurable, int chestCount, int drawerCount, bool drawerApiResolved,
+            string unknownReason = "no player is loaded")
         {
             var builder = new StringBuilder();
-            if (playerLoaded)
+            if (measurable)
             {
                 builder.Append("Sources in range of the player: ")
                     .Append(NonNegative(chestCount) + NonNegative(drawerCount))
@@ -156,7 +162,9 @@ namespace CraftFromDrawersAndChests.Logic
             }
             else
             {
-                builder.Append("Sources in range: unknown (no player is loaded)");
+                builder.Append("Sources in range: unknown (")
+                    .Append(string.IsNullOrEmpty(unknownReason) ? "no player is loaded" : unknownReason)
+                    .Append(')');
             }
 
             builder.Append('\n')

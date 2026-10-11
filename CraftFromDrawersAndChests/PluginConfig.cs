@@ -136,7 +136,7 @@ namespace CraftFromDrawersAndChests
             preventModKey = Bind(config, ConfigModel.SectionKeys, ConfigModel.PreventModKey, ConfigModel.DefaultPreventModKey,
                 "Held key that suppresses this mod's pulling. Use a Unity key name.");
             fillAllModKey = Bind(config, ConfigModel.SectionKeys, ConfigModel.FillAllModKey, ConfigModel.DefaultFillAllModKey,
-                "Held key that fills a station to its maximum instead of a single item. Use a Unity key name.");
+                "Held key that asks storage for a station's whole remaining capacity instead of a single item, taking as much of it as the storage can supply. Use a Unity key name.");
             switchPrevent = Bind(config, ConfigModel.SectionKeys, ConfigModel.SwitchPrevent, ConfigModel.DefaultSwitchPrevent,
                 "If true, holding the prevent key enables this mod's pulling instead of suppressing it.");
 
