@@ -73,6 +73,13 @@ namespace CraftFromDrawersAndChests.Patches
         // resolved once here and cached in these fields, because the guards run inside per-frame station
         // interactions. (Turret.GetAmmo and Turret.GetAmmoType are public in the shipping assembly too —
         // the sanctioned probe confirms it — so those two stay direct calls.)
+        //
+        // Smelter.FindCookableItem and CookingStation.FindCookableItem are PRIVATE in the shipping
+        // assembly as well, but are deliberately NOT reflected: a public equivalent exists — vanilla's
+        // FindCookableItem(Inventory) is just a search of the passed inventory for the station's own
+        // inputs — and CraftFromContainers already uses that equivalent (Inventory.GetItem over
+        // m_conversion). Removing the dependency beats caching a MethodInfo for a private member. See
+        // InventoryHasInput below.
         private static readonly MethodInfo SmelterGetQueueSize = Resolve(typeof(Smelter), "GetQueueSize");
         private static readonly MethodInfo SmelterGetFuel = Resolve(typeof(Smelter), "GetFuel");
         private static readonly MethodInfo CookingStationGetFuel = Resolve(typeof(CookingStation), "GetFuel");
@@ -80,16 +87,35 @@ namespace CraftFromDrawersAndChests.Patches
         private static readonly MethodInfo CookingStationGetFreeSlot = Resolve(typeof(CookingStation), "GetFreeSlot");
         private static readonly MethodInfo CookingStationIsFireLit = Resolve(typeof(CookingStation), "IsFireLit");
         private static bool _invokeFailureLogged;
+        private static bool _returnTypeFailureLogged;
 
         /// <summary>
         /// Resolves a parameterless vanilla method for reflection, logging once — at type initialization
         /// — when it is missing. A null result is not fatal: every guard that uses it fails closed, so
         /// the station is simply not fed. Uses <see cref="AccessTools"/> so the same member resolves
         /// whether the assembly exposes it as public or private.
+        /// <para>
+        /// The lookup itself is wrapped: <see cref="AccessTools.Method(Type, string)"/> can throw
+        /// (<c>AmbiguousMatchException</c> when a type declares two same-named overloads), and a throw
+        /// from a <c>static readonly</c> initializer surfaces as <c>TypeInitializationException</c>
+        /// from every prefix — bypassing the fail-closed design entirely. On throw this logs once and
+        /// returns <c>null</c>, the same as "not found".
+        /// </para>
         /// </summary>
         private static MethodInfo Resolve(Type type, string name)
         {
-            MethodInfo method = AccessTools.Method(type, name);
+            MethodInfo method;
+            try
+            {
+                method = AccessTools.Method(type, name);
+            }
+            catch (Exception e)
+            {
+                Log.LogWarning("StationPatches: resolving vanilla member " + type.Name + "." + name +
+                    "() threw; stations of this kind will not be fed from storage. " + e.Message);
+                return null;
+            }
+
             if (method == null)
                 Log.LogWarning("StationPatches: vanilla member " + type.Name + "." + name + "() was not found; " +
                     "stations of this kind will not be fed from storage.");
@@ -124,12 +150,36 @@ namespace CraftFromDrawersAndChests.Patches
             }
         }
 
+        /// <summary>
+        /// Logs once when a cached member resolves and invokes but returns an unexpected type. That is
+        /// the one failure mode that is otherwise indistinguishable from "the member is absent":
+        /// a right-name/wrong-signature lookup would disable the feature silently. The invoke itself
+        /// already logs a failed call; this logs the type mismatch that a successful call can hide.
+        /// </summary>
+        private static void LogUnexpectedReturnType(string expected, object actual)
+        {
+            if (_returnTypeFailureLogged)
+                return;
+
+            _returnTypeFailureLogged = true;
+            Log.LogWarning("StationPatches: a vanilla station member returned " +
+                (actual == null ? "null" : actual.GetType().Name) + " where " + expected +
+                " was expected; affected stations will not be fed. Vanilla may have changed shape.");
+        }
+
         /// <summary>Reads a cached parameterless <c>int</c> getter; false when it cannot be read.</summary>
         private static bool TryInvokeInt(MethodInfo method, object instance, out int value)
         {
             value = 0;
-            if (!TryInvoke(method, instance, out object result) || !(result is int))
+            if (!TryInvoke(method, instance, out object result))
                 return false;
+
+            if (!(result is int))
+            {
+                LogUnexpectedReturnType("int", result);
+                return false;
+            }
+
             value = (int)result;
             return true;
         }
@@ -138,8 +188,15 @@ namespace CraftFromDrawersAndChests.Patches
         private static bool TryInvokeFloat(MethodInfo method, object instance, out float value)
         {
             value = 0f;
-            if (!TryInvoke(method, instance, out object result) || !(result is float))
+            if (!TryInvoke(method, instance, out object result))
                 return false;
+
+            if (!(result is float))
+            {
+                LogUnexpectedReturnType("float", result);
+                return false;
+            }
+
             value = (float)result;
             return true;
         }
@@ -152,8 +209,15 @@ namespace CraftFromDrawersAndChests.Patches
         private static bool TryInvokeBool(MethodInfo method, object instance, out bool value)
         {
             value = false;
-            if (!TryInvoke(method, instance, out object result) || !(result is bool))
+            if (!TryInvoke(method, instance, out object result))
                 return false;
+
+            if (!(result is bool))
+            {
+                LogUnexpectedReturnType("bool", result);
+                return false;
+            }
+
             value = (bool)result;
             return true;
         }
@@ -249,14 +313,19 @@ namespace CraftFromDrawersAndChests.Patches
                 || StationFeedRules.RemainingCapacity(__instance.m_maxOre, queueSize) <= 0)
                 return true;
 
+            List<ItemDrop> inputs = InputItems(__instance.m_conversion);
+
             // CFC lines 468-479: if the player's own inventory already holds one of the smelter's
             // input types, vanilla's own OnAddOre will find and queue it, so this leaves it alone.
-            if (__instance.FindCookableItem(inventory) != null)
+            // Vanilla's own probe, Smelter::FindCookableItem(Inventory), is PRIVATE in the shipping
+            // assembly and cannot be called directly; this tests the same thing with the public
+            // Inventory.GetItem(<shared name>, -1, false) walked over m_conversion, exactly as CFC does.
+            if (InventoryHasInput(inventory, inputs))
                 return true;
 
             PullFirstInputs(
                 player, __instance.transform.position,
-                InputItems(__instance.m_conversion), flags.OreDisallowTypes, flags);
+                inputs, flags.OreDisallowTypes, flags);
             return true;
         }
 
@@ -377,8 +446,11 @@ namespace CraftFromDrawersAndChests.Patches
         /// </para>
         /// <para>
         /// The item is found before it is pulled whenever the player already carries one: the guard
-        /// calls the station's own <c>FindCookableItem</c> on the player's inventory, which is exactly
-        /// the <c>__result != null</c> test CFC's postfix made.
+        /// tests the player's inventory for one of the station's own inputs with the public
+        /// <c>Inventory.GetItem(&lt;shared name&gt;, -1, false)</c> walked over <c>m_conversion</c> — the
+        /// public-API shape CraftFromContainers uses, and the equivalent of the <c>__result != null</c>
+        /// test CFC's postfix made. Vanilla's own <c>FindCookableItem(Inventory)</c> is <b>private</b> in
+        /// the shipping assembly, so it is never called directly here.
         /// </para>
         /// </summary>
         [HarmonyPatch(typeof(CookingStation), "OnInteract")]
@@ -415,12 +487,19 @@ namespace CraftFromDrawersAndChests.Patches
                 && (!TryInvokeBool(CookingStationIsFireLit, __instance, out bool fireLit) || !fireLit))
                 return true;
 
-            if (__instance.FindCookableItem(inventory) != null)
+            List<ItemDrop> inputs = InputItems(__instance.m_conversion);
+
+            // CFC's guard (395): the player already carries one of the station's own inputs, so
+            // vanilla's own food search will find it and this pulls nothing. Vanilla's probe,
+            // CookingStation::FindCookableItem(Inventory), is PRIVATE in the shipping assembly; the
+            // public Inventory.GetItem(<shared name>, -1, false) over m_conversion tests the same thing
+            // — the mirror of CFC's smelter-ore loop (lines 468-479), which CFC reuses here.
+            if (InventoryHasInput(inventory, inputs))
                 return true;
 
             PullFirstInputs(
                 player, __instance.transform.position,
-                InputItems(__instance.m_conversion), flags.OreDisallowTypes, flags);
+                inputs, flags.OreDisallowTypes, flags);
             return true;
         }
 
@@ -648,6 +727,35 @@ namespace CraftFromDrawersAndChests.Patches
             return item != null && item.m_itemData != null && item.m_itemData.m_shared != null
                 ? item.m_itemData.m_shared.m_name
                 : null;
+        }
+
+        /// <summary>
+        /// Whether <paramref name="inventory"/> already holds one of the station's own input items,
+        /// matched by the item's shared name. This is the public-API equivalent of vanilla's own
+        /// <c>FindCookableItem(Inventory)</c> probe — a search of an inventory for the station's inputs
+        /// — which is <b>private</b> in the shipping assembly on <c>Smelter</c>, <c>CookingStation</c>
+        /// and <c>Fermenter</c> alike and therefore cannot be called directly from here.
+        /// CraftFromContainers does exactly this for its smelter-ore patch: it walks the station's
+        /// <c>m_conversion</c> and tests the player's inventory with the public
+        /// <c>Inventory.GetItem(&lt;shared name&gt;, -1, false)</c> (CFC <c>BepInExPlugin.cs</c> lines
+        /// 468-479). <c>m_conversion</c> and <c>Inventory.GetItem</c> are both public in the shipping
+        /// assembly, so this removes the non-public dependency rather than reflecting it.
+        /// </summary>
+        private static bool InventoryHasInput(Inventory inventory, List<ItemDrop> inputs)
+        {
+            if (inventory == null || inputs == null)
+                return false;
+
+            for (int i = 0; i < inputs.Count; i++)
+            {
+                string sharedName = SharedName(inputs[i]);
+                if (string.IsNullOrEmpty(sharedName))
+                    continue;
+
+                if (inventory.GetItem(sharedName, -1, false) != null)
+                    return true;
+            }
+            return false;
         }
 
         /// <summary>Whether an item carries the item data this mod reads its names from.</summary>
