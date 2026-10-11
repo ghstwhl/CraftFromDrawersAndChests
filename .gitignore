@@ -1,0 +1,18 @@
+# Build output
+bin/
+obj/
+packages/
+Release/
+
+# Generated publicized game/BepInEx reference assemblies (never distributed)
+.references/
+
+# Tool cache (nuget.exe, AssemblyPublicizer)
+tools/.cache/
+
+# Superpowers workspace: the installer's .superpowers junction plus SDD scratch
+.superpowers/
+
+# IDE
+.vs/
+*.user
