@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Opt-out switch for an (optional) pre-build step. This repository has no pre-build
+  action, so this file is a no-op placeholder that keeps the flag settable from one
+  place if one is ever added.
+-->
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ExecutePrebuild>False</ExecutePrebuild>
+  </PropertyGroup>
+</Project>

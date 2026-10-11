@@ -25,7 +25,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\Build.ps1 -SkipRestore -SkipVal
    `tools\.cache` if it isn't on `PATH`).
 2. **Validate** — fails the build when:
    - `ModInfo.Version` isn't `MAJOR.MINOR.PATCH`, or
-   - it doesn't match `manifest.json` **and** `Docs/SolutionDir/Package/Release/manifest.json`, or
+   - it doesn't match `manifest.json`, or
    - any `Translations\**\*.json` file is invalid JSON, or
    - the reference assemblies aren't present at `-ReferencesRoot` (default `<repo>\.references`).
 3. **Build** — MSBuild; produces the single mod DLL directly - no assembly merging step.
@@ -83,6 +83,8 @@ It produces exactly what the csproj expects:
     Managed\                (UnityEngine*.dll, Unity.TextMeshPro.dll, ...)
 <OutputPath>\BepInEx\<BepInExVersion>\BepInEx\core\
     BepInEx.dll  BepInEx.Harmony.dll  0Harmony.dll
+<OutputPath>\Mods\
+    MultiUserChest.dll
 ```
 
 ### Prerequisites
@@ -90,6 +92,10 @@ It produces exactly what the csproj expects:
 - **Valheim** installed (Steam) or `-ValheimPath` provided.
 - **BepInEx 5.4.2350** installed into the Valheim folder, or `-BepInExCorePath`
   pointing at a folder containing `BepInEx.dll`.
+- **MultiUserChest** installed in the same mod set, or `-MultiUserChestDll`
+  pointing at its `MultiUserChest.dll`. It is staged at `<OutputPath>\Mods\MultiUserChest.dll`,
+  which `CraftFromDrawersAndChests.csproj` references; a mod-manager profile's copy under
+  `<BepInExCorePath>\..\plugins` is found automatically.
 - **AssemblyPublicizer.exe** — either pass `-PublicizerPath`, or use
   `-BuildPublicizer` (requires Visual Studio / MSBuild, which you need anyway).
 

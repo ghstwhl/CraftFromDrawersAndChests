@@ -2,6 +2,19 @@
   <PropertyGroup>
     <ValheimGameVersion>1.0.16</ValheimGameVersion>
     <BepInExVersion>5.4.2350</BepInExVersion>
-    <ReferencesRoot>$(MSBuildThisFileDirectory).references</ReferencesRoot>
+
+    <!--
+      Point the build at the local (gitignored) reference assemblies produced by
+      tools/New-ValheimRefs.ps1. ReferencesRoot is only set when .references has actually
+      been populated and no value was supplied explicitly, so an overridden value on the
+      command line (e.g. msbuild /p:ReferencesRoot=C:\ValheimRefs) still wins.
+
+      ValheimGameVersion is the single source of truth for the Valheim version whose
+      assemblies we compile against: the csproj's *_publicized / Managed HintPaths and the
+      tools/*.ps1 scripts all derive from it, so bumping the game version is a one-line
+      change here.
+    -->
+    <_ValheimRefsRoot>$(MSBuildThisFileDirectory).references</_ValheimRefsRoot>
+    <ReferencesRoot Condition="'$(ReferencesRoot)' == '' And Exists('$(_ValheimRefsRoot)\Valheim\$(ValheimGameVersion)\assembly_valheim_publicized.dll')">$(_ValheimRefsRoot)</ReferencesRoot>
   </PropertyGroup>
 </Project>

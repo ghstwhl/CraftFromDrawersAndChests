@@ -7,7 +7,7 @@
 
       1. Restores NuGet packages (packages.config) if needed.
       2. Validates:
-           - ModInfo.Version is MAJOR.MINOR.PATCH and in sync with both manifest.json files,
+           - ModInfo.Version is MAJOR.MINOR.PATCH and in sync with manifest.json,
            - every translation JSON file parses,
            - the local reference assemblies exist.
       3. Builds the project with MSBuild.
@@ -70,7 +70,6 @@ $RepoRoot         = Split-Path -Parent $PSScriptRoot
 $ProjectPath      = Join-Path $RepoRoot 'CraftFromDrawersAndChests\CraftFromDrawersAndChests.csproj'
 $ModInfoPath      = Join-Path $RepoRoot 'CraftFromDrawersAndChests\ModInfo.cs'
 $RootManifestPath = Join-Path $RepoRoot 'manifest.json'
-$GenManifestPath  = Join-Path $RepoRoot 'Docs\SolutionDir\Package\Release\manifest.json'
 $TranslationsDir  = Join-Path $RepoRoot 'CraftFromDrawersAndChests\Translations'
 $PackagesDir      = Join-Path $RepoRoot 'packages'
 $CacheDir         = Join-Path $PSScriptRoot '.cache'
@@ -173,17 +172,6 @@ function Invoke-Validation {
         Fail "manifest.json version_number '$root' != ModInfo.Version '$Version'. Bump them together."
     }
     Write-Ok "manifest.json = $Version"
-
-    if (Test-Path $GenManifestPath) {
-        $gen = (Get-Content $GenManifestPath -Raw | ConvertFrom-Json).version_number
-        if ($gen -ne $Version) {
-            Fail "Docs/SolutionDir/Package/Release/manifest.json version_number '$gen' != '$Version'. Bump them together."
-        }
-        Write-Ok "generated manifest.json = $Version"
-    }
-    else {
-        Write-Info 'generated manifest.json not present (skipped)'
-    }
 
     $jsonFiles = @()
     if (Test-Path $TranslationsDir) {

@@ -9,6 +9,7 @@
         <OutputPath>\Valheim\<GameVersion>\assembly_*_publicized.dll
         <OutputPath>\Valheim\<GameVersion>\Managed\*.dll
         <OutputPath>\BepInEx\<BepInExVersion>\BepInEx\core\*.dll
+        <OutputPath>\Mods\MultiUserChest.dll
 
     The four Valheim game assemblies are publicized with AssemblyPublicizer so the
     mod can access internal/private members without reflection (the project builds
@@ -25,6 +26,12 @@
 .PARAMETER BepInExCorePath
     Folder containing BepInEx.dll, BepInEx.Harmony.dll and 0Harmony.dll.
     Defaults to <ValheimPath>\BepInEx\core when that exists.
+
+.PARAMETER MultiUserChestDll
+    MultiUserChest.dll to stage at <OutputPath>\Mods\MultiUserChest.dll, which the
+    product csproj references. Defaults to a recursive search for MultiUserChest.dll
+    under the plugins folder that sits beside -BepInExCorePath (so a mod-manager
+    profile's copy is found automatically).
 
 .PARAMETER GameVersion
     Valheim version folder name. Defaults to ValheimGameVersion from
@@ -67,6 +74,7 @@ param(
     [string]$ValheimPath,
     [string]$OutputPath,
     [string]$BepInExCorePath,
+    [string]$MultiUserChestDll,
     [string]$GameVersion,
     [string]$BepInExVersion = '5.4.2350',
     [string]$PublicizerPath,
@@ -155,6 +163,32 @@ function Get-MSBuildPath {
 
     $cmd = Get-Command msbuild -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
+
+    return $null
+}
+
+function Resolve-MultiUserChestDll {
+    param(
+        [string]$ExplicitPath,
+        [string]$BepInExCorePath
+    )
+
+    if ($ExplicitPath) {
+        if (-not (Test-Path $ExplicitPath)) { throw "MultiUserChest.dll not found at '$ExplicitPath'." }
+        return (Resolve-Path $ExplicitPath).Path
+    }
+
+    # Default to the copy shipped with the installed mod set: the plugins folder beside the
+    # BepInEx core folder. This resolves for a game-folder BepInEx install and for a
+    # mod-manager profile alike.
+    if ($BepInExCorePath) {
+        $bepRoot = Split-Path -Parent $BepInExCorePath
+        $pluginsDir = Join-Path $bepRoot 'plugins'
+        if (Test-Path $pluginsDir) {
+            $hit = Get-ChildItem -Path $pluginsDir -Recurse -Filter 'MultiUserChest.dll' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($hit) { return $hit.FullName }
+        }
+    }
 
     return $null
 }
@@ -305,16 +339,23 @@ foreach ($file in $BepInExCoreFiles) {
 }
 Write-Ok "Copied BepInEx core -> $outBepCore"
 
+Write-Step 'Staging MultiUserChest reference'
+$outMods = Join-Path $OutputPath 'Mods'
+New-Item -ItemType Directory -Force -Path $outMods | Out-Null
+$multiUserChest = Resolve-MultiUserChestDll -ExplicitPath $MultiUserChestDll -BepInExCorePath $BepInExCorePath
+if ($multiUserChest) {
+    Copy-Item -Path $multiUserChest -Destination (Join-Path $outMods 'MultiUserChest.dll') -Force
+    Write-Ok "Copied MultiUserChest.dll -> $outMods"
+}
+else {
+    Write-Warn2 "MultiUserChest.dll not found; pass -MultiUserChestDll '<path>'. The csproj references $outMods\MultiUserChest.dll, so the product build will fail without it."
+}
+
 Write-Host ''
 Write-Host 'Reference assemblies are ready.' -ForegroundColor Green
 Write-Host ''
-Write-Host 'Point the project at them by setting ReferencesRoot, e.g. add a'
-Write-Host 'Directory.Build.props at the repo root containing:'
+Write-Host 'The repo''s Directory.Build.props points ReferencesRoot at <repo>\.references'
+Write-Host 'whenever it has been populated, so a default run needs no extra flags.'
+Write-Host 'To point the build at a different folder, override ReferencesRoot, e.g.:'
 Write-Host ''
-Write-Host "  <Project>"
-Write-Host "    <PropertyGroup>"
-Write-Host "      <ReferencesRoot>$OutputPath</ReferencesRoot>"
-Write-Host "    </PropertyGroup>"
-Write-Host "  </Project>"
-Write-Host ''
-Write-Host "Or build from a terminal with:  msbuild CraftFromDrawersAndChests.sln /p:ReferencesRoot=`"$OutputPath`""
+Write-Host "  msbuild CraftFromDrawersAndChests.sln /p:ReferencesRoot=`"$OutputPath`""
