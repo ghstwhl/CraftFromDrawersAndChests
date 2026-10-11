@@ -51,7 +51,11 @@ namespace CraftFromDrawersAndChests.Storage
         /// </summary>
         /// <param name="itemName">The item's prefab name; see <see cref="Count"/>.</param>
         /// <param name="amount">The maximum number to take.</param>
-        /// <param name="destination">Where the items should end up, for paths that move them directly.</param>
+        /// <param name="destination">
+        /// Where the taken items are delivered. Every implementation must move the items into it: a
+        /// source that cannot deliver (a null destination, an unresolvable prefab, or no room) takes
+        /// nothing and returns 0 rather than destroying the items.
+        /// </param>
         int Take(string itemName, int amount, Inventory destination);
     }
 }

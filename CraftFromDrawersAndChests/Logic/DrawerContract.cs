@@ -46,6 +46,20 @@ namespace CraftFromDrawersAndChests.Logic
         /// <summary>The preferred contract's range query method name.</summary>
         public const string AllDrawersInRangeName = "AllDrawersInRange";
 
+        /// <summary>
+        /// Simple name of the range query's position parameter type (<c>UnityEngine.Vector3</c>).
+        /// <c>Logic/</c> may not reference UnityEngine, so parameter types are matched by name.
+        /// </summary>
+        public const string Vector3ParameterTypeName = "Vector3";
+
+        /// <summary>Simple name of <see cref="float"/> (<c>System.Single</c>), the range query's second parameter type.</summary>
+        public const string SingleParameterTypeName = "Single";
+
+        private static readonly string[] NoParameterTypes = new string[0];
+
+        private static readonly string[] RangeParameterTypes =
+            new[] { Vector3ParameterTypeName, SingleParameterTypeName };
+
         public readonly DrawerContractKind Kind;
 
         /// <summary>The cached all-drawers query getter/method; null when <see cref="Kind"/> is <see cref="DrawerContractKind.None"/>.</summary>
@@ -84,7 +98,7 @@ namespace CraftFromDrawersAndChests.Logic
             Type api = Lookup(typeLookup, ItemDrawersApiTypeName);
             if (api != null)
             {
-                MethodInfo range = FindStaticMethod(api, AllDrawersInRangeName, 2);
+                MethodInfo range = FindStaticMethod(api, AllDrawersInRangeName, RangeParameterTypes);
                 if (range != null)
                 {
                     return new DrawerContract(
@@ -98,7 +112,7 @@ namespace CraftFromDrawersAndChests.Logic
             Type v2 = Lookup(typeLookup, ClientSideV2TypeName);
             if (v2 != null)
             {
-                MethodInfo all = FindStaticMethod(v2, AllDrawersName, 0);
+                MethodInfo all = FindStaticMethod(v2, AllDrawersName, NoParameterTypes);
                 if (all != null)
                     return new DrawerContract(DrawerContractKind.ClientSideV2, all, null);
             }
@@ -119,13 +133,38 @@ namespace CraftFromDrawersAndChests.Logic
             }
         }
 
-        private static MethodInfo FindStaticMethod(Type type, string name, int parameterCount)
+        /// <summary>
+        /// Finds the public static method <paramref name="name"/> whose parameters match
+        /// <paramref name="parameterTypeNames"/> by position. Matching the parameter types — not
+        /// the arity alone — means a future same-arity overload cannot bind the wrong
+        /// <see cref="MethodInfo"/> and then throw at <c>Invoke</c> time, which would silently
+        /// degrade the whole drawer path to "no drawers". The names are simple type names so the
+        /// pure layer needs no UnityEngine reference.
+        /// </summary>
+        private static MethodInfo FindStaticMethod(Type type, string name, string[] parameterTypeNames)
         {
             MethodInfo[] methods = type.GetMethods(BindingFlags.Public | BindingFlags.Static);
             for (int i = 0; i < methods.Length; i++)
             {
                 MethodInfo method = methods[i];
-                if (method.Name == name && method.GetParameters().Length == parameterCount)
+                if (method.Name != name)
+                    continue;
+
+                ParameterInfo[] parameters = method.GetParameters();
+                if (parameters.Length != parameterTypeNames.Length)
+                    continue;
+
+                bool match = true;
+                for (int j = 0; j < parameters.Length; j++)
+                {
+                    if (parameters[j].ParameterType.Name != parameterTypeNames[j])
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+
+                if (match)
                     return method;
             }
             return null;
@@ -137,7 +176,7 @@ namespace CraftFromDrawersAndChests.Logic
         /// </summary>
         private static MethodInfo FindAllDrawersQuery(Type type)
         {
-            MethodInfo method = FindStaticMethod(type, AllDrawersName, 0);
+            MethodInfo method = FindStaticMethod(type, AllDrawersName, NoParameterTypes);
             if (method != null)
                 return method;
 

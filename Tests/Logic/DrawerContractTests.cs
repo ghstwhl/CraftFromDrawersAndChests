@@ -14,6 +14,15 @@ namespace CraftFromDrawersAndChests.Tests.Logic
     [TestFixture]
     public class DrawerContractTests
     {
+        /// <summary>
+        /// Stands in for <c>UnityEngine.Vector3</c> in the range query's signature. The pure
+        /// matcher compares parameter types by simple name (<c>"Vector3"</c>), and this test
+        /// project deliberately references no UnityEngine, so the stub declares the name locally.
+        /// </summary>
+        private struct Vector3
+        {
+        }
+
         private static class StubItemDrawersApi
         {
             // A static property, like the real API.ItemDrawers_API.AllDrawers.
@@ -23,7 +32,7 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             }
 
             // Two parameters, like the real AllDrawersInRange(Vector3, float).
-            public static object AllDrawersInRange(object pos, float range)
+            public static object AllDrawersInRange(Vector3 pos, float range)
             {
                 return null;
             }
@@ -34,6 +43,22 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             public static object AllDrawers
             {
                 get { return null; }
+            }
+        }
+
+        private static class StubItemDrawersApiWithMismatchedRange
+        {
+            public static object AllDrawers
+            {
+                get { return null; }
+            }
+
+            // Same name and arity as the real range query, but the position parameter's type is
+            // wrong. Binding this MethodInfo would throw at Invoke time, so the matcher must
+            // reject it — otherwise the whole drawer path silently degrades to "no drawers".
+            public static object AllDrawersInRange(object pos, float range)
+            {
+                return null;
             }
         }
 
@@ -134,6 +159,29 @@ namespace CraftFromDrawersAndChests.Tests.Logic
         {
             DrawerContract contract = DrawerContract.Resolve(
                 Lookup(typeof(StubItemDrawersApiWithoutRange), null));
+
+            Assert.That(contract.Kind, Is.EqualTo(DrawerContractKind.None));
+            Assert.That(contract.IsAvailable, Is.False);
+        }
+
+        [Test]
+        public void ApiWithMismatchedRangeParameterTypes_FallsBackToClientSideV2()
+        {
+            // Robustness against a same-arity overload: the wrong MethodInfo must not bind, so
+            // the preferred contract is rejected and the fallback is used instead.
+            DrawerContract contract = DrawerContract.Resolve(
+                Lookup(typeof(StubItemDrawersApiWithMismatchedRange), typeof(StubClientSideV2)));
+
+            Assert.That(contract.Kind, Is.EqualTo(DrawerContractKind.ClientSideV2));
+            Assert.That(contract.RangeQuery, Is.Null);
+            Assert.That(contract.AllDrawersQuery.Name, Is.EqualTo("AllDrawers"));
+        }
+
+        [Test]
+        public void ApiWithMismatchedRangeParameterTypes_FallsBackToNoneWhenNoFallback()
+        {
+            DrawerContract contract = DrawerContract.Resolve(
+                Lookup(typeof(StubItemDrawersApiWithMismatchedRange), null));
 
             Assert.That(contract.Kind, Is.EqualTo(DrawerContractKind.None));
             Assert.That(contract.IsAvailable, Is.False);
