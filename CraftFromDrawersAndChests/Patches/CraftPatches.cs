@@ -54,6 +54,13 @@ namespace CraftFromDrawersAndChests.Patches
     /// then paid for with nothing.
     /// </para>
     /// </summary>
+    // A class-level [HarmonyPatch] is REQUIRED here. It is what makes HarmonyX treat this type as a
+    // patch class: with it absent, the method-level [HarmonyPatch(typeof(X), "Y")] attributes below
+    // are not enough on their own - the whole class is skipped silently, applies nothing, and raises
+    // no error, which is how 0.1.2 shipped with every patch site in this file inert while BepInEx
+    // reported the plugin loaded and nothing failed. The attribute carries no target, so the
+    // method-level attributes still supply it. Proven by Tests/PatchApplicationTests.cs.
+    [HarmonyPatch]
     internal static class CraftPatches
     {
         // Fully qualified: UnityEngine.Logger exists too, so the bare name is ambiguous.

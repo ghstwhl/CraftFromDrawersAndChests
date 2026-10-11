@@ -4,6 +4,31 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-10-12
+
+### Fixed
+
+- **The real reason the mod did nothing in game: almost every patch was silently never applied.**
+  HarmonyX 2.9.0 only treats a type as a patch class when it carries a **class-level**
+  `[HarmonyPatch]`. A class whose only `[HarmonyPatch]` attributes sit on its *methods* is skipped
+  entirely: it applies nothing, throws nothing and logs nothing, while BepInEx reports the plugin
+  loaded and "0 failed". `CraftPatches`, `PullKeyPatches`, `StationPatches` and `TerminalPatch` were
+  written that way, so crafting, building, stations, the pull key and the console command were all
+  inert. Each of those classes now carries a bare `[HarmonyPatch]` as well; the attribute states no
+  target, so the existing method-level targets still supply it and no code moved.
+- A live patch count was what found this: the start-up line reported **3** patched methods (the two in
+  `ContainerTrackingPatches` and one in `TogglePatches`, the only classes already annotated at class
+  level) where roughly twenty were intended.
+
+### Added
+
+- The start-up report now names the patched methods, so a patch whose target fails to resolve shows up
+  as a gap rather than being hidden by a count.
+- `Tests/PatchApplicationTests.cs` settles patch placement with throwaway targets and no game
+  assemblies: it proves both class-level forms are applied by the shipped HarmonyX, so this class of
+  failure can never pass the test suite again. The Logic tests could not see it, because the test
+  project compiles the Logic sources in rather than referencing the product assembly.
+
 ## [0.1.2] - 2026-10-12
 
 ### Fixed

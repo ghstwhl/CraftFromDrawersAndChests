@@ -86,6 +86,9 @@ namespace CraftFromDrawersAndChests.Patches
     /// the cooking station and the turret have no such hint in CraftFromContainers and get none here.
     /// </para>
     /// </summary>
+    // A class-level [HarmonyPatch] is REQUIRED here - see the note on CraftPatches. Without it every
+    // method-level target in this file is silently skipped and no station ever sees storage.
+    [HarmonyPatch]
     internal static class StationPatches
     {
         // Fully qualified: UnityEngine.Logger exists too, so the bare name is ambiguous.

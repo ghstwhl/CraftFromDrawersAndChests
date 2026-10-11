@@ -15,6 +15,31 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
   </ItemGroup>
 
+  <!-- HarmonyX, for PatchApplicationTests. Whether a Harmony patch is APPLIED is a runtime decision
+       that the linked Logic sources cannot express, which is how 0.1.2 shipped with every
+       method-targeted patch silently unapplied. The HintPaths mirror the product project's own
+       0Harmony reference, so the probe runs against the same HarmonyX BepInEx loads. HarmonyX's
+       static constructor installs its stack-trace fixes and needs MonoMod's detour and utils
+       assemblies alongside it, which is why all three are referenced. -->
+  <ItemGroup>
+    <Reference Include="0Harmony">
+      <HintPath>$(ReferencesRoot)\BepInEx\$(BepInExVersion)\BepInEx\core\0Harmony.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="MonoMod.RuntimeDetour">
+      <HintPath>$(ReferencesRoot)\BepInEx\$(BepInExVersion)\BepInEx\core\MonoMod.RuntimeDetour.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="MonoMod.Utils">
+      <HintPath>$(ReferencesRoot)\BepInEx\$(BepInExVersion)\BepInEx\core\MonoMod.Utils.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Mono.Cecil">
+      <HintPath>$(ReferencesRoot)\BepInEx\$(BepInExVersion)\BepInEx\core\Mono.Cecil.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
   <!-- The Logic folder is linked, not referenced: the product assembly needs the game DLLs
        loaded at runtime, so the pure decision logic is compiled straight into the test assembly. -->
   <ItemGroup>

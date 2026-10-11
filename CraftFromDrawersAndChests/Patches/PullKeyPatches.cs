@@ -45,6 +45,9 @@ namespace CraftFromDrawersAndChests.Patches
     /// player's own inventory with no pull at all.
     /// </para>
     /// </summary>
+    // A class-level [HarmonyPatch] is REQUIRED here - see the note on CraftPatches. Without it every
+    // method-level target in this file is silently skipped and the whole feature is inert.
+    [HarmonyPatch]
     internal static class PullKeyPatches
     {
         // Fully qualified: UnityEngine.Logger exists too, so the bare name is ambiguous.

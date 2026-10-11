@@ -49,6 +49,10 @@ namespace CraftFromDrawersAndChests.Patches
     /// own commands — is left untouched.
     /// </para>
     /// </summary>
+    // A class-level [HarmonyPatch] is REQUIRED here - see the note on CraftPatches. Without it the
+    // console command is never hooked, so every command this mod answers is reported by the game as
+    // "not a recognized command".
+    [HarmonyPatch]
     internal static class TerminalPatch
     {
         // Fully qualified: UnityEngine.Logger exists too, so the bare name is ambiguous.

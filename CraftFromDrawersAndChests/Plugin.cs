@@ -115,13 +115,19 @@ namespace CraftFromDrawersAndChests
         /// </summary>
         private static void LogPatchReport()
         {
-            int patchedCount = 0;
+            // The names, not just the count: a patch class that is applied but whose target could not
+            // be resolved leaves a gap that a number alone would hide.
+            var patchedNames = new System.Collections.Generic.List<string>();
             foreach (var patchedMethod in Harmony.GetPatchedMethods())
-                patchedCount++;
+                patchedNames.Add(patchedMethod.DeclaringType.Name + "." + patchedMethod.Name);
+            patchedNames.Sort();
+
+            int patchedCount = patchedNames.Count;
 
             Log.LogInfo(ModInfo.ModName + " " + ModInfo.Version + ": Harmony patched " + patchedCount +
-                        " game method(s). Harmony's no-argument PatchAll() would have inferred the " +
-                        "assembly '" + InferPatchAllAssembly() + "'.");
+                        " game method(s): " + string.Join(", ", patchedNames.ToArray()) +
+                        " (Harmony's no-argument PatchAll() would have inferred '" +
+                        InferPatchAllAssembly() + "'.)");
 
             if (patchedCount == 0)
             {
