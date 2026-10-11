@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using BepInEx.Logging;
 using HarmonyLib;
 
 namespace CraftFromDrawersAndChests.Storage
@@ -28,6 +29,12 @@ namespace CraftFromDrawersAndChests.Storage
     [HarmonyPatch(typeof(Container))]
     internal static class ContainerTrackingPatches
     {
+        // Fully qualified: UnityEngine.Logger exists too, so the bare name is ambiguous.
+        private static readonly ManualLogSource Log = BepInEx.Logging.Logger.CreateLogSource(ModInfo.ModName);
+
+        /// <summary>Set once, so the live-patch breadcrumb is written at most once per session.</summary>
+        private static bool breadcrumbLogged;
+
         /// <summary>The name prefixes CraftFromContainers' predicate accepts (a built piece, or a mod-named container).</summary>
         private const string BuiltPiecePrefix = "piece_";
         private const string ContainerNamePrefix = "Container";
@@ -66,7 +73,22 @@ namespace CraftFromDrawersAndChests.Storage
         [HarmonyPostfix]
         private static void AwakePostfix(Container __instance)
         {
-            if (ShouldTrack(__instance, VanillaChestSource.ViewOf(__instance)))
+            ZNetView view = VanillaChestSource.ViewOf(__instance);
+            bool track = ShouldTrack(__instance, view);
+
+            // One-shot breadcrumb: proves the tracking patch is live and reports the first container's
+            // own state, so "no sources in range" can be told apart from "this patch never ran".
+            if (!breadcrumbLogged)
+            {
+                breadcrumbLogged = true;
+                Log.LogInfo(ModInfo.ModName + ": tracking patch is live; first Container.Awake was '" +
+                            (__instance != null && __instance.gameObject != null ? __instance.name : "<null>") +
+                            "', inventory=" + (__instance != null && __instance.GetInventory() != null) +
+                            ", zdo=" + (view != null && view.GetZDO() != null) +
+                            " -> " + (track ? "tracked" : "rejected"));
+            }
+
+            if (track)
                 AddUnique(__instance);
         }
 

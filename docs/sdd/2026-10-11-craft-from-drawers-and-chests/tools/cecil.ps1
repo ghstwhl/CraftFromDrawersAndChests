@@ -28,6 +28,11 @@
     # fields (e.g. confirm Player.m_placementStatus exists and what type it is)
     powershell -NoProfile -ExecutionPolicy Bypass -File cecil.ps1 -Assembly <dll> -Method m_placementStatus -Fields
 
+    # IL of one method on ONE type (the ONLY way to see ordering, e.g. whether a method body reads a
+    # field before it is assigned, or calls Instantiate before SetZDO). Always pass -Type when using
+    # -IL: without it, a name like Awake matches every type in the assembly that has an Awake.
+    powershell -NoProfile -ExecutionPolicy Bypass -File cecil.ps1 -Assembly <dll> -Type Container -Method Awake -IL -MaxLines 200
+
   ALWAYS pass -Definitions as well as -Callers when a name has overloads: a call-site scan that
   matches on name alone cannot distinguish Player.HaveRequirements(Recipe,...) from
   Player.HaveRequirements(Piece, RequirementMode), and those two behave very differently.
@@ -42,13 +47,15 @@ param(
     [switch]$Definitions,
     [switch]$Callers,
     [switch]$Fields,
+    [switch]$IL,
+    [string]$Type = '',
     [int]$MaxLines = 60
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-if (-not $Definitions -and -not $Callers -and -not $Fields) { $Definitions = $true; $Callers = $true }
+if (-not $Definitions -and -not $Callers -and -not $Fields -and -not $IL) { $Definitions = $true; $Callers = $true }
 
 $cecilPath = 'C:\Users\merlin\.nuget\packages\jotunnlib\2.30.2\build\Mono.Cecil.dll'
 if (-not (Test-Path -LiteralPath $cecilPath)) { throw "Mono.Cecil not found at $cecilPath" }
@@ -65,6 +72,7 @@ $asmDef = [Mono.Cecil.AssemblyDefinition]::ReadAssembly($Assembly)
 $definitionLines = New-Object System.Collections.Generic.List[string]
 $callSiteLines = New-Object System.Collections.Generic.List[string]
 $fieldLines = New-Object System.Collections.Generic.List[string]
+$ilLines = New-Object System.Collections.Generic.List[string]
 $scannedMethods = 0
 $scannedInstructions = 0
 
@@ -75,6 +83,11 @@ try {
     while ($pending.Count -gt 0) {
         $typeDef = $pending.Pop()
         foreach ($nested in $typeDef.NestedTypes) { $pending.Push($nested) }
+
+        # Optional type filter, -ceq and NOT -eq: PowerShell's -eq is case-insensitive, so -eq would
+        # also match a differently-cased type and silently dump the wrong type's IL.
+        if (-not [string]::IsNullOrEmpty($Type) -and
+            -not ($typeDef.Name -ceq $Type) -and -not ($typeDef.FullName -ceq $Type)) { continue }
 
         if ($Fields) {
             foreach ($fieldDef in $typeDef.Fields) {
@@ -108,6 +121,18 @@ try {
                     elseif ($methodDef.IsAssembly) { 'internal' }
                     else { 'private' }
                 $definitionLines.Add("$access $($typeDef.Name)::$($methodDef.Name)($paramTypes) : $($methodDef.ReturnType.Name)")
+
+                # IL dump: the instruction ORDER is the whole point (e.g. does a body instantiate
+                # before it assigns the ZDO?), which neither -Definitions nor -Callers can show.
+                if ($IL -and $methodDef.HasBody) {
+                    $ilLines.Add("---- $($typeDef.FullName)::$($methodDef.Name) ----")
+                    foreach ($localVar in $methodDef.Body.Variables) {
+                        $ilLines.Add("  .local [$($localVar.Index)] $($localVar.VariableType.Name)")
+                    }
+                    foreach ($ins in $methodDef.Body.Instructions) {
+                        $ilLines.Add('  ' + ('{0:X4}' -f $ins.Offset) + '  ' + $ins.OpCode.Name + ' ' + $ins.Operand)
+                    }
+                }
             }
 
             if (-not $Callers) { continue }
@@ -136,6 +161,15 @@ if ($Fields) {
     "==== fields named $Method ===="
     if ($fieldLines.Count -eq 0) { "  (none)" }
     else { $fieldLines | Sort-Object -Unique | Select-Object -First $MaxLines }
+}
+
+if ($IL) {
+    "==== IL of $Method ===="
+    if ($ilLines.Count -eq 0) { "  (none)" }
+    else {
+        $ilLines | Select-Object -First $MaxLines
+        if ($ilLines.Count -gt $MaxLines) { "  ... ($($ilLines.Count - $MaxLines) more lines, raise -MaxLines)" }
+    }
 }
 
 if ($Definitions) {

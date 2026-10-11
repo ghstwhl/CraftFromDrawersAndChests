@@ -54,6 +54,9 @@ namespace CraftFromDrawersAndChests.Patches
         // Fully qualified: UnityEngine.Logger exists too, so the bare name is ambiguous.
         private static readonly ManualLogSource Log = BepInEx.Logging.Logger.CreateLogSource(ModInfo.ModName);
 
+        /// <summary>Set once, so the live-patch breadcrumb is written at most once per session.</summary>
+        private static bool firstLineLogged;
+
         /// <summary>
         /// The console input hook. A prefix on <c>Terminal.InputText</c>, mirroring CraftFromContainers'
         /// own <c>InputText_Patch</c>: a line that names this mod is echoed and answered and the prefix
@@ -68,6 +71,16 @@ namespace CraftFromDrawersAndChests.Patches
                 return true;
 
             string input = InputText(__instance);
+
+            // One-shot proof that this patch is live and what it actually sees. 0.1.1 shipped a build
+            // whose patches were never applied, and no log line could tell that apart from a hook that
+            // runs and does not match - so the hook now says so once, whatever the line is.
+            if (!firstLineLogged)
+            {
+                firstLineLogged = true;
+                Log.LogInfo(ModInfo.ModName + ": console hook is live; first line seen was '" + input + "'.");
+            }
+
             if (!ConsoleCommandRules.TryParse(
                     input, ModInfo.ConsoleCommand, ModInfo.ConsoleCommandAlias, out ConsoleSubcommand subcommand))
                 return true;

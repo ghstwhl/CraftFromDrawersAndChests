@@ -89,7 +89,89 @@ namespace CraftFromDrawersAndChests
                              "are still applied, but every config-gated feature is inert). Cause: " + e);
             }
 
-            Harmony.PatchAll();
+            // The assembly is passed EXPLICITLY. Harmony's no-argument PatchAll() infers its target
+            // from a stack frame - new StackTrace().GetFrame(1).GetMethod().ReflectedType.Assembly -
+            // and if that inference lands anywhere other than this assembly, it patches
+            // AccessTools.GetTypesFromAssembly(theWrongAssembly) instead: zero patches, no exception
+            // and no log line. That is exactly what 0.1.1 did. Naming the assembly removes the
+            // inference entirely, so this can no longer depend on stack-frame resolution.
+            Harmony.PatchAll(typeof(Plugin).Assembly);
+
+            LogPatchReport();
+        }
+
+        /// <summary>
+        /// Logs how many game methods this mod's Harmony instance actually patched, and what
+        /// Harmony's own no-argument <c>PatchAll()</c> would have chosen instead.
+        /// <para>
+        /// This is permanent, not debugging scaffolding. 0.1.1 loaded cleanly, threw nothing and
+        /// patched nothing, and the log could not distinguish that from a mod that runs correctly and
+        /// simply finds no storage nearby - which cost two test cycles. The count is the one fact that
+        /// separates those two, and it is cheap. <c>GetPatchedMethods()</c> is an instance method that
+        /// filters to this instance's own patches (it calls the static
+        /// <c>GetAllPatchedMethods()</c> and then keeps only the methods whose owners include this
+        /// instance's ID), so a non-zero count means this mod's patches are live.
+        /// </para>
+        /// </summary>
+        private static void LogPatchReport()
+        {
+            int patchedCount = 0;
+            foreach (var patchedMethod in Harmony.GetPatchedMethods())
+                patchedCount++;
+
+            Log.LogInfo(ModInfo.ModName + " " + ModInfo.Version + ": Harmony patched " + patchedCount +
+                        " game method(s). Harmony's no-argument PatchAll() would have inferred the " +
+                        "assembly '" + InferPatchAllAssembly() + "'.");
+
+            if (patchedCount == 0)
+            {
+                Log.LogError(ModInfo.ModName + ": Harmony applied ZERO patches, so every feature is " +
+                             "inert (no chest pulling, no drawer pulling, no per-storage switch, no " +
+                             "console command). Nothing else in this log marks that state.");
+            }
+        }
+
+        /// <summary>
+        /// Reproduces, and reports, the expression Harmony's no-argument <c>PatchAll()</c> uses to
+        /// choose the assembly it patches: <c>new StackTrace().GetFrame(1).GetMethod().
+        /// ReflectedType.Assembly</c>.
+        /// <para>
+        /// The stack-frame index matters: in <c>PatchAll()</c>, frame 1 is <c>Awake</c>, so this probe
+        /// is deliberately its own method - called FROM <c>Awake</c> - which puts <c>Awake</c> at frame
+        /// 1 here too and makes the reported value the one the no-argument call would have used. It
+        /// exists only to report that value; patching itself no longer uses it.
+        /// </para>
+        /// <para>
+        /// NoInlining is load-bearing: the frame index is only equivalent to Harmony's while this is a
+        /// real frame. If the JIT inlined it into <c>Awake</c>, frame 1 would become <c>Awake</c>'s own
+        /// caller and the probe would report a Unity/native assembly - which would look exactly like
+        /// the bug being diagnosed, when the inference had in fact worked.
+        /// </para>
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(
+            System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static string InferPatchAllAssembly()
+        {
+            try
+            {
+                System.Diagnostics.StackFrame frame = new System.Diagnostics.StackTrace().GetFrame(1);
+                if (frame == null)
+                    return "<null frame>";
+
+                System.Reflection.MethodBase method = frame.GetMethod();
+                if (method == null)
+                    return "<null method>";
+
+                System.Type reflectedType = method.ReflectedType;
+                if (reflectedType == null)
+                    return "<null reflected type>";
+
+                return reflectedType.Assembly.GetName().Name;
+            }
+            catch (Exception e)
+            {
+                return "<threw " + e.GetType().Name + ">";
+            }
         }
     }
 }
