@@ -15,7 +15,7 @@
          CraftFromDrawersAndChests-release.zip and CraftFromDrawersAndChests-<version>.zip.
 
     The mod DLL is byte-identical on the server and the client, so a single build is
-    deployable to both. (Portal networks live in the BepInEx config, not in a separate file.)
+    deployable to both.
 
 .PARAMETER Configuration
     'Release' (default) or 'Debug'. Debug builds but does not package.

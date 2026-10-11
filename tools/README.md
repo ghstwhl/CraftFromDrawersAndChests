@@ -59,22 +59,11 @@ client (same build on each side).
 
 `0` = success, non-zero = failure. The last line is always `BUILD OK ...` or `BUILD FAILED: ...`.
 
-## Documentation (`Docs/`)
+## Documentation
 
-Most README files are **generated** by T4 templates that Visual Studio runs (`TextTemplatingFileGenerator` entries in `Docs/Docs.csproj`). Edit the templates in `Docs/Modules/`, never the generated output:
-
-| Generated file | Template |
-|---|---|
-| `Docs/README.Nexus.bbcode` | `Docs/README.Nexus.tt` (`Modules/10Header`, `20Features`, `25Configuration`, `30Installation`, `40Bugs`, `60Credits`, `99Footer`) |
-| `Docs/SolutionDir/Package/Release/README.md` | `Docs/SolutionDir/Package/Release/README.tt` (same modules) |
-| `Docs/SolutionDir/Package/Release/manifest.json` | `Docs/SolutionDir/Package/Release/manifest.tt` |
-| `Docs/SolutionDir/Package/Release/CHANGELOG.md`, `Docs/GitHub.Release.md`, the issue templates | their matching `.tt` files |
-
-The templates read the mod identity straight from the built assembly (`Mod.Info` via `Docs/_Header.t4`), so a regeneration picks up the current name, GUID, version and GitHub repo automatically - but it needs `Docs/Docs.csproj` built first.
-
-Two files are **hand-maintained** and must not be regenerated: the repository `README.md`, and `Docs/SolutionDir/README.md` (its template was removed because the file also contains hand-written sections that regeneration would have deleted).
-
-To regenerate, open the solution in Visual Studio and run the custom tool on the `.tt` files (right-click → *Run Custom Tool*).
+There is no generated-documentation or template build step in this repository. All docs
+are plain, hand-maintained Markdown: the repository `README.md`, this `tools/README.md`,
+and the design and plan notes under `docs/superpowers/`.
 
 ## `New-ValheimRefs.ps1`
 
