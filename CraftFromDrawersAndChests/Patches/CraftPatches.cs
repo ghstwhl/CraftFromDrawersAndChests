@@ -216,11 +216,10 @@ namespace CraftFromDrawersAndChests.Patches
         /// vanilla consumes them, so a destination that cannot take them makes the pull fail, and a
         /// failed pull leaves the already-created crafted item or placed piece unpaid for.
         /// <para>
-        /// The destination is reduced to the pure <see cref="DrawerTake.InventoryStack"/> view and its
-        /// empty-slot count, and each line becomes a <see cref="DestinationCapacity.Delivery"/> built
-        /// from the item the recipe names; <see cref="DestinationCapacity.CanAccept"/> then applies the
-        /// very predicate the drawer path removes behind. A line whose item cannot be described is
-        /// declined rather than assumed deliverable, so an unprovable case fails closed.
+        /// The decision itself is shared with the ctrl-click pull
+        /// (<see cref="PullEngine.DestinationAllows"/>), so the crafting, building and pull paths
+        /// cannot drift into a parallel free-space rule; this method only supplies the crafted
+        /// output that must be charged ahead of the shortfall.
         /// </para>
         /// </summary>
         private static bool DestinationAllows(
@@ -229,32 +228,7 @@ namespace CraftFromDrawersAndChests.Patches
             PullPlanResult plan,
             DestinationCapacity.Delivery? reserved)
         {
-            Inventory inventory = player.GetInventory();
-            if (inventory == null)
-                return false;
-
-            var deliveries = new List<DestinationCapacity.Delivery>(plan.Lines.Count + 1);
-
-            // Order matters: the crafted output is placed before the pull runs, so it is charged first.
-            if (reserved.HasValue)
-                deliveries.Add(reserved.Value);
-
-            for (int i = 0; i < plan.Lines.Count; i++)
-            {
-                PullLine line = plan.Lines[i];
-                if (line.Amount <= 0)
-                    continue;
-
-                ItemDrop.ItemData data = ItemDataOf(FindRequirement(resources, line.ItemName));
-                if (data == null || data.m_shared == null || data.m_shared.m_maxStackSize <= 0)
-                    return false;
-
-                deliveries.Add(new DestinationCapacity.Delivery(
-                    data.m_shared.m_name, data.m_quality, data.m_worldLevel, line.Amount, data.m_shared.m_maxStackSize));
-            }
-
-            return DestinationCapacity.CanAccept(
-                DestinationStacks(inventory), DestinationEmptySlots(inventory), deliveries);
+            return PullEngine.DestinationAllows(player, resources, plan, reserved);
         }
 
         /// <summary>
@@ -308,65 +282,6 @@ namespace CraftFromDrawersAndChests.Patches
 
             return new DestinationCapacity.Delivery(
                 data.m_shared.m_name, qualityLevel, (byte)Game.m_worldLevel, produced, data.m_shared.m_maxStackSize);
-        }
-
-        /// <summary>The requirement whose item carries the given prefab name, or null when none does.</summary>
-        private static Piece.Requirement FindRequirement(Piece.Requirement[] resources, string prefab)
-        {
-            if (resources == null || string.IsNullOrEmpty(prefab))
-                return null;
-
-            for (int i = 0; i < resources.Length; i++)
-            {
-                Piece.Requirement requirement = resources[i];
-                if (requirement == null)
-                    continue;
-
-                if (string.Equals(PullEngine.PrefabName(requirement), prefab, System.StringComparison.Ordinal))
-                    return requirement;
-            }
-            return null;
-        }
-
-        /// <summary>The item definition a requirement names, or null when it has no resolvable item.</summary>
-        private static ItemDrop.ItemData ItemDataOf(Piece.Requirement requirement)
-        {
-            if (requirement == null || requirement.m_resItem == null)
-                return null;
-
-            return requirement.m_resItem.m_itemData;
-        }
-
-        /// <summary>
-        /// The destination's stacks as the pure view the merge predicate matches on, read exactly the
-        /// way <c>Storage.DrawerSource</c> reads them: shared name, quality, world level, current size
-        /// and stack size. Read-only — the inventory is never written here.
-        /// </summary>
-        private static List<DrawerTake.InventoryStack> DestinationStacks(Inventory inventory)
-        {
-            var stacks = new List<DrawerTake.InventoryStack>();
-            if (inventory == null || inventory.m_inventory == null)
-                return stacks;
-
-            for (int i = 0; i < inventory.m_inventory.Count; i++)
-            {
-                ItemDrop.ItemData item = inventory.m_inventory[i];
-                if (item == null || item.m_shared == null)
-                    continue;
-
-                stacks.Add(new DrawerTake.InventoryStack(
-                    item.m_shared.m_name, item.m_quality, item.m_worldLevel, item.m_stack, item.m_shared.m_maxStackSize));
-            }
-            return stacks;
-        }
-
-        /// <summary>The destination's empty slot count, the way <c>Inventory</c> itself computes it.</summary>
-        private static int DestinationEmptySlots(Inventory inventory)
-        {
-            if (inventory == null || inventory.m_inventory == null)
-                return 0;
-
-            return inventory.m_width * inventory.m_height - inventory.m_inventory.Count;
         }
 
         /// <summary>

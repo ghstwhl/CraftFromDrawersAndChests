@@ -218,6 +218,169 @@ namespace CraftFromDrawersAndChests.Pull
                 message => Log.LogWarning(message));
         }
 
+        /// <summary>
+        /// Pulls a recipe's ingredients into <paramref name="player"/>'s own inventory — the
+        /// ctrl-click behaviour: the click becomes a pull instead of a craft. Unlike the crafting and
+        /// building paths, which ask storage only for the <i>shortfall</i>, this asks for the
+        /// <b>whole</b> recipe (see <see cref="PlanFor"/>); the player has expressly asked to fetch
+        /// the ingredients.
+        /// <para>
+        /// Returns true only when the pull completed. It returns false, having consumed nothing and
+        /// dropped nothing, when storage cannot cover the requirement <b>or</b> when the player's
+        /// inventory cannot accept everything the pull would deliver. The destination check is what
+        /// keeps items off the ground — the design's top anti-goal (Review Focus 2): a pull that moved
+        /// items into a full inventory would leave the remainder on the floor, so the whole pull is
+        /// declined before a single item moves. The check reuses the very destination model the
+        /// crafting path uses (<see cref="DestinationAllows"/>), so the two cannot disagree.
+        /// </para>
+        /// </summary>
+        /// <param name="requirements">The recipe's requirements; may be null.</param>
+        /// <param name="qualityLevel">The quality the recipe is evaluated at (an upgrade is &gt; 1).</param>
+        /// <param name="multiplier">How many of the recipe are being pulled (1 unless multicrafting).</param>
+        /// <param name="player">The player to deliver into; null refuses.</param>
+        /// <param name="flags">The resolved configuration snapshot; null refuses.</param>
+        public static bool PullToPlayer(
+            Piece.Requirement[] requirements, int qualityLevel, int multiplier, Player player, FeatureFlags flags)
+        {
+            if (player == null || requirements == null || flags == null)
+                return false;
+
+            Vec3 origin = OriginOf(player);
+
+            // PlanFor is the single planning entry point (Task 13 wrote it for this task, uncalled):
+            // it collects the eligible sources once and asks storage for the full requirement.
+            PullPlanResult plan = PlanFor(requirements, qualityLevel, multiplier, origin, flags);
+            if (!plan.Feasible)
+                return false;
+
+            if (plan.Lines.Count == 0)
+                return true; // the recipe needed nothing from storage
+
+            // The very list PlanFor planned against (cached for the frame), so the lines' SourceIds resolve.
+            IReadOnlyList<IStorageSource> sources = Collect(origin, flags);
+
+            // No crafted output is reserved here: the pull is the whole action, nothing is crafted.
+            if (!DestinationAllows(player, requirements, plan, null))
+                return false;
+
+            return Execute(plan, sources, player);
+        }
+
+        /// <summary>
+        /// Whether the player's own inventory can accept everything a plan would deliver into it —
+        /// the destination half of the availability gate, shared verbatim by the crafting path
+        /// (<c>Patches.CraftPatches</c>) and the ctrl-click pull (<see cref="PullToPlayer"/>) so the
+        /// two cannot diverge into a "parallel rule".
+        /// <para>
+        /// The inventory is reduced to the pure <see cref="DrawerTake.InventoryStack"/> view and its
+        /// empty-slot count, and each plan line becomes a <see cref="DestinationCapacity.Delivery"/>
+        /// built from the item the requirement names; <see cref="DestinationCapacity.CanAccept"/>
+        /// then applies the very predicate the drawer path removes behind. A line whose item cannot
+        /// be described is declined rather than assumed deliverable, so an unprovable case fails
+        /// closed. <paramref name="reserved"/> is charged first — the crafting path's crafted output,
+        /// which vanilla adds before consuming; the pull passes null.
+        /// </para>
+        /// </summary>
+        /// <param name="player">The delivery destination's owner; null refuses.</param>
+        /// <param name="requirements">The recipe's or piece's requirements, used to describe each line.</param>
+        /// <param name="plan">The plan whose lines are to be delivered; null refuses.</param>
+        /// <param name="reserved">A delivery to charge ahead of the lines (the crafted output), or null.</param>
+        public static bool DestinationAllows(
+            Player player,
+            Piece.Requirement[] requirements,
+            PullPlanResult plan,
+            DestinationCapacity.Delivery? reserved)
+        {
+            if (plan == null)
+                return false;
+
+            Inventory inventory = player != null ? player.GetInventory() : null;
+            if (inventory == null)
+                return false;
+
+            var deliveries = new List<DestinationCapacity.Delivery>(plan.Lines.Count + 1);
+
+            // Order matters on the crafting path: the crafted output is placed before the pull runs.
+            if (reserved.HasValue)
+                deliveries.Add(reserved.Value);
+
+            for (int i = 0; i < plan.Lines.Count; i++)
+            {
+                PullLine line = plan.Lines[i];
+                if (line.Amount <= 0)
+                    continue;
+
+                ItemDrop.ItemData data = ItemDataOf(FindRequirement(requirements, line.ItemName));
+                if (data == null || data.m_shared == null || data.m_shared.m_maxStackSize <= 0)
+                    return false;
+
+                deliveries.Add(new DestinationCapacity.Delivery(
+                    data.m_shared.m_name, data.m_quality, data.m_worldLevel, line.Amount, data.m_shared.m_maxStackSize));
+            }
+
+            return DestinationCapacity.CanAccept(
+                DestinationStacks(inventory), DestinationEmptySlots(inventory), deliveries);
+        }
+
+        /// <summary>The requirement whose item carries the given prefab name, or null when none does.</summary>
+        private static Piece.Requirement FindRequirement(Piece.Requirement[] resources, string prefab)
+        {
+            if (resources == null || string.IsNullOrEmpty(prefab))
+                return null;
+
+            for (int i = 0; i < resources.Length; i++)
+            {
+                Piece.Requirement requirement = resources[i];
+                if (requirement == null)
+                    continue;
+
+                if (string.Equals(PrefabName(requirement), prefab, StringComparison.Ordinal))
+                    return requirement;
+            }
+            return null;
+        }
+
+        /// <summary>The item definition a requirement names, or null when it has no resolvable item.</summary>
+        private static ItemDrop.ItemData ItemDataOf(Piece.Requirement requirement)
+        {
+            if (requirement == null || requirement.m_resItem == null)
+                return null;
+
+            return requirement.m_resItem.m_itemData;
+        }
+
+        /// <summary>
+        /// The destination's stacks as the pure view the merge predicate matches on, read exactly the
+        /// way <c>Storage.DrawerSource</c> reads them: shared name, quality, world level, current size
+        /// and stack size. Read-only — the inventory is never written here.
+        /// </summary>
+        private static List<DrawerTake.InventoryStack> DestinationStacks(Inventory inventory)
+        {
+            var stacks = new List<DrawerTake.InventoryStack>();
+            if (inventory == null || inventory.m_inventory == null)
+                return stacks;
+
+            for (int i = 0; i < inventory.m_inventory.Count; i++)
+            {
+                ItemDrop.ItemData item = inventory.m_inventory[i];
+                if (item == null || item.m_shared == null)
+                    continue;
+
+                stacks.Add(new DrawerTake.InventoryStack(
+                    item.m_shared.m_name, item.m_quality, item.m_worldLevel, item.m_stack, item.m_shared.m_maxStackSize));
+            }
+            return stacks;
+        }
+
+        /// <summary>The destination's empty slot count, the way <c>Inventory</c> itself computes it.</summary>
+        private static int DestinationEmptySlots(Inventory inventory)
+        {
+            if (inventory == null || inventory.m_inventory == null)
+                return 0;
+
+            return inventory.m_width * inventory.m_height - inventory.m_inventory.Count;
+        }
+
         /// <summary>The player's world position as the pure <see cref="Vec3"/> the range maths uses.</summary>
         public static Vec3 OriginOf(Player player)
         {
