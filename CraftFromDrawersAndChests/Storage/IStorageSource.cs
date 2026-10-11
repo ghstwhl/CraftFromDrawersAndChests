@@ -56,6 +56,13 @@ namespace CraftFromDrawersAndChests.Storage
         /// needs a definite outcome must decline such a source before calling it (for a chest, via
         /// <c>VanillaChestSource.CanTakeSynchronously</c>).
         /// </para>
+        /// <para>
+        /// A source that delivers some items and only <i>then</i> has a further removal routed returns
+        /// the delivered count rather than the sentinel: the sentinel is reserved for a request that
+        /// moved nothing at all, because a count of zero would be indistinguishable from "the storage
+        /// was empty". A caller must therefore treat a short positive count as "ask again for the
+        /// remainder" and a sentinel as "this line is settled".
+        /// </para>
         /// </summary>
         /// <param name="itemName">The item's prefab name; see <see cref="Count"/>.</param>
         /// <param name="amount">The maximum number to take.</param>

@@ -150,19 +150,25 @@ namespace CraftFromDrawersAndChests.Storage
         /// would desync the chest against the player MultiUserChest has managing it (Ruling 5).
         /// </para>
         /// <para>
-        /// The return value is <c>&gt;= 0</c> — the number actually removed, which may be fewer than
-        /// requested, or zero — or <see cref="ChestTake.Deferred"/> (<c>-1</c>) when the removal was
-        /// <b>routed</b> to another player and the count is not knowable synchronously. The sentinel
-        /// is propagated unchanged from the bridge, never swallowed: <c>-1</c> is not a failure and
-        /// must not be retried, because the items do still leave the chest and will arrive later, so a
-        /// retry would duplicate them. A caller that needs a definite count must check
-        /// <see cref="CanTakeSynchronously"/> first.
+        /// <b>Fulfils across stacks.</b> <see cref="Count"/> sums <i>every</i> matching stack, so
+        /// <see cref="Take"/> must be able to hand over exactly that much, or the availability gate
+        /// would promise more than a single removal can deliver — the disagreement that let a chest
+        /// holding 2 × 30 pass a 50-item gate, deliver 30, and (with the consume skipped) hand out a
+        /// free crafted item. One MultiUserChest removal is a one-slot operation, so this takes the
+        /// largest matching stack, delivers it, and repeats until the request is met or the chest runs
+        /// out. Each iteration either delivers a positive number or stops, so the loop always
+        /// terminates.
         /// </para>
         /// <para>
-        /// A single call removes from one stack only, because MultiUserChest's protocol is a one-slot
-        /// operation, so the result never exceeds the matched stack's size even when
-        /// <paramref name="amount"/> is larger. See <see cref="FindLargestStack"/> for why the largest
-        /// matching stack is the one chosen.
+        /// The return value is <c>&gt;= 0</c> — the number actually removed, which may be fewer than
+        /// requested, or zero — or <see cref="ChestTake.Deferred"/> (<c>-1</c>) when a removal was
+        /// <b>routed</b> to another player and the count is not knowable synchronously. The sentinel is
+        /// only returned when <b>nothing at all</b> was delivered: once some items are already in hand,
+        /// the definite count is returned instead, and the routed remainder arrives asynchronously
+        /// (the caller treats the line as satisfied either way). <c>-1</c> is not a failure and must
+        /// not be retried, because the items do still leave the chest and will arrive later, so a
+        /// retry would duplicate them. A caller that needs a definite count must check
+        /// <see cref="CanTakeSynchronously"/> first.
         /// </para>
         /// </summary>
         public int Take(string itemName, int amount, Inventory destination)
@@ -174,21 +180,40 @@ namespace CraftFromDrawersAndChests.Storage
             if (inventory == null)
                 return 0;
 
-            // No matching stack is a definite zero, not a deferred result: there is nothing to route.
-            ItemDrop.ItemData item = FindLargestStack(inventory, itemName);
-            if (item == null)
-                return 0;
+            int delivered = 0;
+            while (delivered < amount)
+            {
+                // Re-locate the largest matching stack each pass: the previous removal may have
+                // emptied the stack entirely (a full stack is gone) or only partly drained it.
+                ItemDrop.ItemData item = FindLargestStack(inventory, itemName);
+                if (item == null)
+                    break; // no matching stack left: a definite shortfall, not a deferred result
 
-            // Propagated verbatim, including the -1 sentinel; see the remarks above.
-            return MultiUserChestBridge.RemoveFromChest(_container, item, destination, amount);
+                int taken = MultiUserChestBridge.RemoveFromChest(_container, item, destination, amount - delivered);
+
+                if (taken == ChestTake.Deferred)
+                {
+                    // Routed to another player. Report the sentinel only when nothing was delivered;
+                    // otherwise the items already in hand make the definite count the honest answer.
+                    return delivered > 0 ? delivered : ChestTake.Deferred;
+                }
+
+                if (taken <= 0)
+                    break; // no progress (the destination has no room, or the chest holds none)
+
+                delivered += taken;
+            }
+
+            return delivered;
         }
 
         /// <summary>
         /// The largest stack of the given prefab in the container, matched exactly as
         /// <see cref="Count"/> matches: on <c>item.m_dropPrefab.name</c>, never the localized
-        /// <c>m_shared.m_name</c>. The largest stack is chosen so one bridge call removes as much of
-        /// <paramref name="itemName"/> as the chest can give in a single protocol operation; the first
-        /// matching stack would under-deliver whenever an earlier slot holds only part of the request.
+        /// <c>m_shared.m_name</c>. <see cref="Take"/> locates a stack through this each pass and
+        /// removes from it, so choosing the largest keeps the common case — a single chest stack big
+        /// enough for the whole request — to one bridge call; a request larger than one stack still
+        /// succeeds, only across several calls.
         /// </summary>
         private static ItemDrop.ItemData FindLargestStack(Inventory inventory, string itemName)
         {

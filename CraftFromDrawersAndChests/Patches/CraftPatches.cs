@@ -22,11 +22,14 @@ namespace CraftFromDrawersAndChests.Patches
     /// </para>
     /// <para>
     /// <b>All-or-nothing.</b> The plan is computed whole before anything moves, and only the shortfall
-    /// below what the player carries is asked of storage. If the plan is infeasible, or if any line
-    /// cannot be fully secured (a source short of the amount, or a chest removal routed to another
-    /// player), the prefix returns false so vanilla consumes <b>nothing</b>: an item already pulled
-    /// sits in the player's inventory and is recoverable, whereas an item half-consumed is not. This
-    /// is the design's top anti-goal.
+    /// below what the player carries is asked of storage. If the plan is infeasible, or if a line
+    /// cannot be fully secured (a source exhausted before the amount is met), the prefix returns false
+    /// so vanilla consumes <b>nothing</b>: an item already pulled sits in the player's inventory and
+    /// is recoverable, whereas an item half-consumed is not. This is the design's top anti-goal.
+    /// <see cref="PullRunner"/> owns the per-line reaction: a delivery routed to another player counts
+    /// as secured (the items have already left the storage), and a short-but-progressing delivery is
+    /// retried before a line is ever declared failed, so the deterministic case that used to hand out
+    /// a free crafted item is closed.
     /// </para>
     /// </summary>
     internal static class CraftPatches
@@ -40,6 +43,16 @@ namespace CraftFromDrawersAndChests.Patches
         /// <c>Player.HaveRequirements(Recipe, ...)</c> before it called here, so the one thing left to
         /// add is storage. <paramref name="discover"/> is left alone — learning a recipe must not
         /// depend on what is in a chest.
+        /// <para>
+        /// A <c>requireOnlyOneIngredient</c> recipe is deliberately left unanswered. Vanilla's answer
+        /// for one already means "any single ingredient is present", and the craft consumes the one
+        /// ingredient the <i>player's own inventory</i> provides — <c>InventoryGui.DoCrafting</c> takes
+        /// the single requirement item chosen by <c>Recipe.GetAmount</c> (via
+        /// <c>Player.GetFirstRequiredItem</c>) and removes it with <c>Inventory.RemoveItem</c>, never
+        /// through <c>ConsumeResources</c>, so the pull path this mod installs never runs for such a
+        /// recipe. Offering it on the strength of storage would therefore show the player a craftable
+        /// recipe that <c>DoCrafting</c> then refuses. Deferring to vanilla keeps the panel honest.
+        /// </para>
         /// </summary>
         [HarmonyPatch(typeof(Player), "HaveRequirementItems")]
         [HarmonyPostfix]
@@ -47,6 +60,11 @@ namespace CraftFromDrawersAndChests.Patches
             Player __instance, Recipe piece, bool discover, int qualityLevel, int amount, ref bool __result)
         {
             if (__result || discover || piece == null || __instance == null || !Enabled())
+                return;
+
+            // See the remarks: a single-ingredient recipe cannot be supplied from storage, so vanilla's
+            // own any-one answer is the only one consistent with what DoCrafting will do.
+            if (piece.m_requireOnlyOneIngredient)
                 return;
 
             __result = CanReach(__instance, piece.m_resources, qualityLevel, amount);

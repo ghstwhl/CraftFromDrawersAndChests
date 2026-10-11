@@ -177,18 +177,17 @@ namespace CraftFromDrawersAndChests.Pull
 
         /// <summary>
         /// Executes every line of a feasible plan, taking each line's amount from its source into
-        /// <paramref name="player"/>'s inventory. Returns true only when <b>every</b> line was fully
-        /// secured; the first line that cannot be is a failure and the walk stops, leaving whatever
+        /// <paramref name="player"/>'s inventory. Returns true only when <b>every</b> line was
+        /// satisfied; the first line that cannot be is a failure and the walk stops, leaving whatever
         /// was already taken in the player's inventory.
         /// <para>
-        /// <see cref="IStorageSource.Take"/> has three answer shapes and all three are honoured. A
-        /// value <c>&gt;= 0</c> is the count actually taken, which may be fewer than the line asked
-        /// for (a drawer hands over one stack per delivery; a chest may hold less than was counted), so
-        /// anything short of the line's amount fails. <see cref="ChestTake.Deferred"/> (<c>-1</c>) is
-        /// <b>not</b> a count: it means the removal was routed to another player and its outcome is not
-        /// knowable here, so it too fails — a caller must never treat it as a number. Plans are built
-        /// only from synchronously-servable sources (see <see cref="BuildStocks"/>), so a deferred
-        /// answer here means a chest changed hands mid-pull; failing is the all-or-nothing response.
+        /// The sequencing — the three <see cref="IStorageSource.Take"/> answer shapes, the retry of a
+        /// short-but-progressing delivery, and the all-or-nothing outcome — lives in the pure
+        /// <see cref="PullRunner"/>; this method only supplies the game-facing decide-and-take step
+        /// (resolve the line's source, call <see cref="IStorageSource.Take"/>) and the logger. See
+        /// <see cref="PullRunner.Run"/> for how each shape is handled, in particular that
+        /// <see cref="ChestTake.Deferred"/> counts as <b>satisfied</b> (the items have already left the
+        /// storage) rather than failed.
         /// </para>
         /// </summary>
         public static bool Execute(PullPlanResult plan, IReadOnlyList<IStorageSource> sources, Player player)
@@ -203,36 +202,20 @@ namespace CraftFromDrawersAndChests.Pull
                 return false;
 
             IReadOnlyDictionary<string, IStorageSource> byId = ById(sources);
-            IReadOnlyList<PullLine> lines = plan.Lines;
-            for (int i = 0; i < lines.Count; i++)
-            {
-                PullLine line = lines[i];
-
-                IStorageSource source;
-                if (!byId.TryGetValue(line.SourceId, out source) || source == null || !source.IsValid)
+            return PullRunner.Run(
+                plan.Lines,
+                (line, amount) =>
                 {
-                    Log.LogWarning("Pull aborted: the source for " + line.Amount + "x '" + line.ItemName +
-                                   "' is gone before it could be taken.");
-                    return false;
-                }
-
-                int taken = source.Take(line.ItemName, line.Amount, destination);
-
-                if (taken == ChestTake.Deferred)
-                {
-                    Log.LogWarning("Pull aborted: " + line.Amount + "x '" + line.ItemName +
-                                   "' was routed to another player and cannot be secured synchronously.");
-                    return false;
-                }
-
-                if (taken < line.Amount)
-                {
-                    Log.LogWarning("Pull aborted: the source supplied " + taken + " of " + line.Amount +
-                                   "x '" + line.ItemName + "'.");
-                    return false;
-                }
-            }
-            return true;
+                    IStorageSource source;
+                    if (!byId.TryGetValue(line.SourceId, out source) || source == null || !source.IsValid)
+                    {
+                        Log.LogWarning("Pull: the source for " + line.Amount + "x '" + line.ItemName +
+                                       "' is gone before it could be taken; treating it as exhausted.");
+                        return 0;
+                    }
+                    return source.Take(line.ItemName, amount, destination);
+                },
+                message => Log.LogWarning(message));
         }
 
         /// <summary>The player's world position as the pure <see cref="Vec3"/> the range maths uses.</summary>
