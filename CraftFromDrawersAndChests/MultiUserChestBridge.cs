@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using BepInEx.Logging;
+using CraftFromDrawersAndChests.Logic;
 using MultiUserChest;
 
 namespace CraftFromDrawersAndChests
@@ -23,12 +24,17 @@ namespace CraftFromDrawersAndChests
     /// </list>
     /// </para>
     /// <para>
-    /// <b>Synchronicity.</b> In MultiUserChest 0.6.2, when this client owns the chest,
-    /// <c>ContainerHandler.RemoveItemFromChest</c> applies the removal and the delivery inline and
-    /// returns <c>null</c>; when it does not, the method sends a routed RPC and returns the request,
-    /// and the owning client answers asynchronously. The count returned here is therefore the
-    /// destination's own item delta, which is definite for the local branch and 0 for the routed one
-    /// (see the remarks on <see cref="RemoveFromChest"/>).
+    /// <b>Synchronicity.</b> In MultiUserChest 0.6.2, <c>ContainerHandler.RemoveItemFromChest</c>
+    /// answers in one of three ways (see <see cref="ChestTake"/>): it applies the removal and the
+    /// delivery inline and returns no request when this client owns the chest; it declines locally
+    /// and returns a request whose drag amount is zero when nothing can be removed; and it sends a
+    /// routed RPC and returns a request whose drag amount is positive when another player owns the
+    /// chest. The count returned here is the destination's own item delta, which is definite for the
+    /// inline and declined cases; the routed case has no synchronous count and reports
+    /// <see cref="ChestTake.Deferred"/> instead (see the remarks on <see cref="RemoveFromChest"/>).
+    /// Callers that need a definite outcome must use <see cref="CanRemoveSynchronously"/> to decline
+    /// a chest another player owns <b>before</b> calling, because by the time the call returns a
+    /// routed request has already left.
     /// </para>
     /// </summary>
     public static class MultiUserChestBridge
@@ -42,24 +48,32 @@ namespace CraftFromDrawersAndChests
         /// <paramref name="destination"/>, returning how many actually reached the destination.
         /// <para>
         /// When this client owns the chest (it owned it already, or it was claimed because nobody
-        /// did), MultiUserChest applies the request and credits
-        /// <paramref name="destination"/> inline; the return value is then the destination's matching
-        /// item-count delta, which is the count that actually moved.
+        /// did), MultiUserChest applies the request and credits <paramref name="destination"/> inline,
+        /// or declines it locally; either way the return value is the destination's matching item-count
+        /// delta, which is the count that actually moved and may be zero.
         /// </para>
         /// <para>
         /// When another player owns the chest, the request is routed to them and the outcome is
         /// applied asynchronously, so no synchronous count exists. Returning the requested amount
-        /// would be an optimistic claim the all-or-nothing rule cannot trust, so this returns 0 for
-        /// that case and logs that the result is deferred. The item still leaves storage exactly once
-        /// (it is removed by the owning client), which is what the "two players on one chest" rule
-        /// requires; only this client's ability to count it synchronously is lost.
+        /// would be an optimistic claim the all-or-nothing rule cannot trust, and returning zero would
+        /// be indistinguishable from "nothing was removed" — a caller could then retry an item that
+        /// does still move and so duplicate it. This therefore returns
+        /// <see cref="ChestTake.Deferred"/> (<c>-1</c>) for that case and logs that the result is
+        /// deferred. The item still leaves storage exactly once (it is removed by the owning client),
+        /// which is what the "two players on one chest" rule requires; only this client's ability to
+        /// count it synchronously is lost. Use <see cref="CanRemoveSynchronously"/> to decline such a
+        /// chest before calling if a definite outcome is required.
         /// </para>
         /// </summary>
         /// <param name="chest">The chest to remove from. Its inventory is never written here.</param>
         /// <param name="item">The exact stack to remove from, located by the caller.</param>
         /// <param name="destination">Where the removed items are delivered.</param>
         /// <param name="amount">The maximum number of items to remove.</param>
-        /// <returns>The number of items delivered into <paramref name="destination"/>.</returns>
+        /// <returns>
+        /// The number of items delivered into <paramref name="destination"/> (<c>&gt;= 0</c>), or
+        /// <see cref="ChestTake.Deferred"/> (<c>-1</c>) when the request was routed to another player
+        /// and the outcome is not yet knowable.
+        /// </returns>
         public static int RemoveFromChest(Container chest, ItemDrop.ItemData item, Inventory destination, int amount)
         {
             if (chest == null || item == null || item.m_shared == null || destination == null || amount <= 0)
@@ -87,26 +101,48 @@ namespace CraftFromDrawersAndChests
             RequestChestRemove request =
                 ContainerHandler.RemoveItemFromChest(chest, item, destination, to, sender, amount);
 
-            // A null request is MultiUserChest's local branch: the removal and the delivery were
-            // applied inline before it returned, so this delta is definite. A non-null request was
-            // either routed to another client (dragAmount > 0) or declined (dragAmount == 0).
+            // A null request is MultiUserChest's inline path: the removal and the delivery were applied
+            // before it returned, so this delta is definite. A non-null request was either routed to
+            // another client (dragAmount > 0) or declined locally (dragAmount == 0).
             int delivered = CountMatching(destination, sharedName) - deliveredBefore;
-            if (delivered < 0)
-                delivered = 0;
+            bool routed = ChestTake.WasRouted(request == null, request != null ? request.dragAmount : 0);
 
-            if (request == null && delivered == 0)
+            if (routed)
+            {
+                Log.LogWarning("Chest is managed by another player; routed a request for " +
+                               request.dragAmount + "x '" + PrefabName(item) + "'. The owner applies " +
+                               "it asynchronously, so the moved count cannot be reported here yet; " +
+                               "returning " + ChestTake.Deferred + " (deferred).");
+            }
+            else if (ChestTake.DeliveredNothing(routed, delivered))
             {
                 Log.LogWarning("MultiUserChest delivered nothing into the destination for '" +
                                PrefabName(item) + "' (the chest may be empty or the destination full).");
             }
-            else if (request != null && request.dragAmount > 0)
-            {
-                Log.LogWarning("Chest is managed by another player; routed a request for " +
-                               request.dragAmount + "x '" + PrefabName(item) + "'. The owner applies " +
-                               "it asynchronously, so the moved count cannot be reported here yet.");
-            }
 
-            return delivered;
+            return ChestTake.Result(routed, delivered);
+        }
+
+        /// <summary>
+        /// Whether a removal from <paramref name="chest"/> is applied locally and synchronously, so
+        /// <see cref="RemoveFromChest"/> can report the exact count. True for a chest nobody owns (it
+        /// is claimed and becomes ours) and for a chest we already own; false for a chest another
+        /// player owns, whose removal would be routed.
+        /// <para>
+        /// A caller that needs a definite outcome must check this <b>before</b> calling
+        /// <see cref="RemoveFromChest"/> and skip a chest that fails it: a routed request has already
+        /// been sent by the time the removal returns, so declining afterwards is too late.
+        /// </para>
+        /// </summary>
+        /// <param name="chest">The chest a removal would target.</param>
+        /// <returns>True when the removal would be applied locally and its count known synchronously.</returns>
+        public static bool CanRemoveSynchronously(Container chest)
+        {
+            ZNetView view = chest != null ? chest.m_nview : null;
+            if (view == null || !view.IsValid())
+                return false;
+
+            return ChestTake.CanServeSynchronously(view.HasOwner(), view.IsOwner());
         }
 
         /// <summary>

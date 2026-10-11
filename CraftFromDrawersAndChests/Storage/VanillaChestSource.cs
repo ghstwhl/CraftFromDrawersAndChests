@@ -90,6 +90,21 @@ namespace CraftFromDrawersAndChests.Storage
         }
 
         /// <summary>
+        /// Whether <see cref="Take"/> from this chest can be served synchronously, i.e. whether its
+        /// removal would be applied locally and its count known on return. False means another player
+        /// owns the chest: a removal would be routed, and the request has already left by the time
+        /// <see cref="Take"/> returns, so <see cref="Take"/> would report
+        /// <see cref="ChestTake.Deferred"/>. A caller that needs a definite outcome (an all-or-nothing
+        /// pull) must check this and skip the source rather than call <see cref="Take"/>. True for an
+        /// unowned chest (it is claimed and becomes ours) and for a chest we already own. Mirrors the
+        /// read-only, game-facing shape of <see cref="IStorageSource"/>'s members.
+        /// </summary>
+        public bool CanTakeSynchronously
+        {
+            get { return MultiUserChestBridge.CanRemoveSynchronously(_container); }
+        }
+
+        /// <summary>
         /// How many of the given prefab the container holds. Storage is keyed by <b>prefab name</b>
         /// (<c>"Wood"</c>), not by <c>m_shared.m_name</c> (<c>"$item_wood"</c>): every other part of
         /// this mod — the drawer's ZDO, the planner's <c>StorageStock</c> and <c>PullRequest</c> —
@@ -135,6 +150,15 @@ namespace CraftFromDrawersAndChests.Storage
         /// would desync the chest against the player MultiUserChest has managing it (Ruling 5).
         /// </para>
         /// <para>
+        /// The return value is <c>&gt;= 0</c> — the number actually removed, which may be fewer than
+        /// requested, or zero — or <see cref="ChestTake.Deferred"/> (<c>-1</c>) when the removal was
+        /// <b>routed</b> to another player and the count is not knowable synchronously. The sentinel
+        /// is propagated unchanged from the bridge, never swallowed: <c>-1</c> is not a failure and
+        /// must not be retried, because the items do still leave the chest and will arrive later, so a
+        /// retry would duplicate them. A caller that needs a definite count must check
+        /// <see cref="CanTakeSynchronously"/> first.
+        /// </para>
+        /// <para>
         /// A single call removes from one stack only, because MultiUserChest's protocol is a one-slot
         /// operation, so the result never exceeds the matched stack's size even when
         /// <paramref name="amount"/> is larger. See <see cref="FindLargestStack"/> for why the largest
@@ -150,10 +174,12 @@ namespace CraftFromDrawersAndChests.Storage
             if (inventory == null)
                 return 0;
 
+            // No matching stack is a definite zero, not a deferred result: there is nothing to route.
             ItemDrop.ItemData item = FindLargestStack(inventory, itemName);
             if (item == null)
                 return 0;
 
+            // Propagated verbatim, including the -1 sentinel; see the remarks above.
             return MultiUserChestBridge.RemoveFromChest(_container, item, destination, amount);
         }
 

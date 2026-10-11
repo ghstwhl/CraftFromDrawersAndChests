@@ -46,8 +46,16 @@ namespace CraftFromDrawersAndChests.Storage
 
         /// <summary>
         /// Removes up to <paramref name="amount"/> of <paramref name="itemName"/> through the
-        /// storage's supported mutation path and returns how many were actually taken (which may be
-        /// fewer than requested, or zero).
+        /// storage's supported mutation path and returns how many were actually taken.
+        /// <para>
+        /// The contract is: a value <c>&gt;= 0</c> is the number actually taken (which may be fewer
+        /// than requested, or zero), and <see cref="ChestTake.Deferred"/> (<c>-1</c>) means the
+        /// removal was <b>routed</b> to another player and the count is not knowable synchronously. A
+        /// deferred result is not a failure and must <b>not</b> be retried: the items are already
+        /// leaving the storage and will arrive later, so a retry would duplicate them. A caller that
+        /// needs a definite outcome must decline such a source before calling it (for a chest, via
+        /// <c>VanillaChestSource.CanTakeSynchronously</c>).
+        /// </para>
         /// </summary>
         /// <param name="itemName">The item's prefab name; see <see cref="Count"/>.</param>
         /// <param name="amount">The maximum number to take.</param>
