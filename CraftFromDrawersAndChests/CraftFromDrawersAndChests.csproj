@@ -110,6 +110,7 @@
   <ItemGroup>
     <Compile Include="ModInfo.cs" />
     <Compile Include="Plugin.cs" />
+    <Compile Include="PluginConfig.cs" />
     <Compile Include="Logic\ChestTypeRules.cs" />
     <Compile Include="Logic\ConfigModel.cs" />
     <Compile Include="Logic\Eligibility.cs" />

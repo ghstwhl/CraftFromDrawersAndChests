@@ -42,6 +42,14 @@ namespace CraftFromDrawersAndChests
         {
             Instance = this;
             Harmony = new Harmony(ModInfo.ModGuid);
+
+            // Configuration first: PluginConfig.ReadInto is the single writer of the shared
+            // FeatureFlags snapshot, and it must run before PatchAll so every patch observes a
+            // fully populated snapshot rather than the all-false values a non-defaulted DTO
+            // would otherwise hold.
+            PluginConfig.Init(Config);
+            PluginConfig.ReadInto(PluginConfig.Flags);
+
             Harmony.PatchAll();
         }
     }
