@@ -14,10 +14,10 @@ namespace CraftFromDrawersAndChests
     /// </summary>
     /// <remarks>
     /// Every section name, key name and default comes from <see cref="ConfigModel"/>; this file
-    /// holds no string literal that duplicates one of its constants. The entries are registered
-    /// with Jötunn's <see cref="SynchronizationManager"/>, and each is marked admin-only, which is
-    /// what makes their values server-authoritative: the server's copy is pushed to every client
-    /// and the entries are locked for non-admins. <see cref="ReadInto"/> is the only writer of
+    /// holds no string literal that duplicates one of its constants. Each entry is marked
+    /// admin-only, which is what makes its value server-authoritative: Jötunn synchronises a
+    /// plugin's own config file implicitly, so the server's copy is pushed to every client and the
+    /// entries are locked for non-admins (see <see cref="Init"/>). <see cref="ReadInto"/> is the only writer of
     /// <see cref="FeatureFlags"/>; it runs from <c>Plugin.Awake</c> before any patch is applied
     /// and again from the <see cref="SynchronizationManager.OnConfigurationSynchronized"/> handler,
     /// so the snapshot tracks the values Jötunn has just written into the entries.
@@ -78,8 +78,9 @@ namespace CraftFromDrawersAndChests
         public static Color UnFlashColor => unFlashColor.Value;
 
         /// <summary>
-        /// Binds every config entry and registers the file with Jötunn for server-authoritative
-        /// synchronisation. Called once, from <c>Plugin.Awake</c>.
+        /// Binds every config entry. Jötunn synchronises a plugin's own config file implicitly, so
+        /// no registration call is needed — see the note below on the one that must never come back.
+        /// Called once, from <c>Plugin.Awake</c>.
         /// </summary>
         public static void Init(ConfigFile config)
         {
@@ -146,10 +147,25 @@ namespace CraftFromDrawersAndChests
             // Jötunn writes the server's values into these entries after Init has run and then
             // raises this event. Re-reading the snapshot there is what actually makes the values
             // server-authoritative; without it a client would keep its own local file's values.
-            // Wired before the registration call so the refresh stays in place independently of it.
             SynchronizationManager.OnConfigurationSynchronized += RefreshFlags;
 
-            SynchronizationManager.Instance.RegisterCustomConfig(config);
+            // DO NOT add SynchronizationManager.Instance.RegisterCustomConfig(config) back here.
+            //
+            // That method registers a NON-DEFAULT config file and throws ArgumentException for a
+            // plugin's own file, because it "is a default mod config and is already implicitly
+            // synchronized" (the documented exception on
+            // Jotunn.Managers.SynchronizationManager.RegisterCustomConfig). A plugin's own
+            // BaseUnityPlugin.Config IS a default mod config - GetConfigFiles covers "all default
+            // and custom config files ... of plugins that have Jotunn as a dependency" - so the
+            // call could never be correct: it only ever threw, and a re-throw is not a warning.
+            //
+            // Its former position, inside Plugin.Awake, is what made Task 15f a total failure: the
+            // throw aborted Awake before Harmony.PatchAll(), so not a single patch was applied and
+            // every feature was dead, while BepInEx still reported "0 failed" (an exception in a
+            // plugin's Awake is logged by Unity, not by the chainloader). Restoring this call would
+            // silently disable every feature again. Nothing is lost by removing it: each entry is
+            // still bound with IsAdminOnly, which is the attribute Jötunn requires for an entry to
+            // be synchronised and locked for non-admins.
         }
 
         /// <summary>

@@ -1,3 +1,4 @@
+using System;
 using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
@@ -22,6 +23,13 @@ namespace CraftFromDrawersAndChests
     [BepInIncompatibility("Azumatt.AzuCraftyBoxes")]
     // Version enforcement: every player and the server must run this mod at a matching version.
     [NetworkCompatibility(CompatibilityLevel.EveryoneMustHaveMod, VersionStrictness.Patch)]
+    // Task 8's requirement is that a client inherits the server's values and that a non-admin sees
+    // every entry read-only. Jotunn enforces that for entries carrying IsAdminOnly only when the
+    // plugin's AdminOnlyStrictness says so; with no attribute the strictness is Jotunn's implicit
+    // default, which its XML docs do not state. Pinning it to Always makes the lock independent of
+    // whether Jotunn detects this mod on the server (a hard dependency with EveryoneMustHaveMod
+    // below, so it always is), so a non-admin client can never edit a value the server owns.
+    [SynchronizationMode(AdminOnlyStrictness.Always)]
     public class Plugin : BaseUnityPlugin
     {
         /// <summary>The live plugin instance, for later patches that need the <see cref="BaseUnityPlugin"/>.</summary>
@@ -48,8 +56,38 @@ namespace CraftFromDrawersAndChests
             // FeatureFlags snapshot, and it must run before PatchAll so every patch observes a
             // fully populated snapshot rather than the all-false values a non-defaulted DTO
             // would otherwise hold.
-            PluginConfig.Init(Config);
-            PluginConfig.ReadInto(PluginConfig.Flags);
+            //
+            // A failure here must not be able to disable the whole mod, which is exactly what one
+            // wrong config call did (Task 15f): the throw aborted Awake before PatchAll, so no
+            // patch was applied at all - and BepInEx still reported "0 failed", because an
+            // exception in a plugin's Awake is logged by Unity, not by the chainloader, which made
+            // a total failure silent. So the configuration is initialised inside a guard whose
+            // catch names this mod and the failing step and logs at Error level (LogError is
+            // written to LogOutput.log whatever the user's configured log level), and then still
+            // falls through to Harmony.PatchAll().
+            //
+            // On failure the guard is deliberately "patch anyway, loudly, and deterministically
+            // off": FeatureFlags is non-defaulted, so a read that failed partway would otherwise
+            // leave an unpredictable half-populated snapshot. Forcing ModEnabled false instead
+            // makes the outcome a clean, fully disabled mod - the safest state - and it cannot be a
+            // silent no-op, because the LogError below is always emitted and is the only thing that
+            // reports it. Every config-gated feature checks ModEnabled (directly, or through the
+            // same flags in Enabled()), so forcing it false leaves the mod deterministically inert
+            // rather than half-configured.
+            try
+            {
+                PluginConfig.Init(Config);
+                PluginConfig.ReadInto(PluginConfig.Flags);
+            }
+            catch (Exception e)
+            {
+                if (PluginConfig.Flags != null)
+                    PluginConfig.Flags.ModEnabled = false;
+
+                Log.LogError("CraftFromDrawersAndChests: configuration initialisation failed; the " +
+                             "mod is being left fully disabled until this is fixed (Harmony patches " +
+                             "are still applied, but every config-gated feature is inert). Cause: " + e);
+            }
 
             Harmony.PatchAll();
         }
