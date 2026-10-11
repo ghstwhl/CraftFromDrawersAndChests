@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 
 namespace CraftFromDrawersAndChests.Logic
@@ -7,7 +8,8 @@ namespace CraftFromDrawersAndChests.Logic
     /// <summary>
     /// The pure decisions behind the ctrl-click pull key and its feedback text: whether the mod is
     /// allowed to act given the prevent key, whether a click becomes a pull at all, how the
-    /// shortfall names are collapsed, and the two messages the player sees.
+    /// shortfall names are collapsed, the two messages the player sees, and the requirement
+    /// readout's text.
     /// <para>
     /// The gate is a faithful port of CraftFromContainers 4.0.7's <c>AllowByKey()</c>:
     /// <c>preventKeyHeld ? switchPrevent : !switchPrevent</c>. With <c>switchPrevent</c> off (the
@@ -101,6 +103,33 @@ namespace CraftFromDrawersAndChests.Logic
             }
             builder.Append('.');
             return builder.ToString();
+        }
+
+        /// <summary>
+        /// The requirement readout's text: the configured <c>"Resource string"</c>
+        /// (<c>"{0}/{1}"</c> by default) formatted with the available and required amounts, exactly as
+        /// CraftFromContainers writes it. An empty or whitespace-only setting falls back to the plain
+        /// required amount, and a malformed format string — one whose braces do not balance or that
+        /// names an argument the readout does not supply — is caught and falls back the same way rather
+        /// than throwing inside the game's UI loop.
+        /// </summary>
+        /// <param name="resourceString">The configured format; null, empty or whitespace means "plain amount".</param>
+        /// <param name="available">How much the player can draw on — their inventory plus covered storage.</param>
+        /// <param name="required">How much the requirement needs.</param>
+        public static string ResourceAmountText(string resourceString, int available, int required)
+        {
+            string plain = required.ToString(CultureInfo.InvariantCulture);
+            if (string.IsNullOrEmpty(resourceString) || resourceString.Trim().Length == 0)
+                return plain;
+
+            try
+            {
+                return string.Format(CultureInfo.InvariantCulture, resourceString, available, required);
+            }
+            catch (FormatException)
+            {
+                return plain;
+            }
         }
     }
 }

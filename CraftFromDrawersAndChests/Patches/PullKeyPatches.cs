@@ -14,21 +14,25 @@ namespace CraftFromDrawersAndChests.Patches
     /// ingredients into the player's inventory instead of crafting it, reports the outcome, and
     /// flashes the resource readout while storage covers the requirement.
     /// <para>
-    /// Two patch sites. <c>InventoryGui.OnCraftPressed</c> is prefixed: when the pull key is held the
+    /// Three patch sites. <c>InventoryGui.OnCraftPressed</c> is prefixed: when the pull key is held the
     /// craft is never performed — <see cref="PullEngine.PullToPlayer"/> is run instead and the prefix
     /// returns false. This mirrors CraftFromContainers 4.0.7's <c>DoCrafting_Patch</c>, which also
     /// never lets the intercepted click craft. The second site, a postfix on
-    /// <c>InventoryGui.SetupRequirement</c>, is the flash: the requirement's amount text alternates
-    /// between <see cref="PluginConfig.FlashColor"/> and <see cref="PluginConfig.UnFlashColor"/> while
-    /// the requirement is covered by storage, which is the same affordance CraftFromContainers
-    /// provides.
+    /// <c>InventoryGui.SetupRequirement</c>, is the readout: the requirement's amount text is
+    /// rewritten from the configured resource string and alternates between
+    /// <see cref="PluginConfig.FlashColor"/> and <see cref="PluginConfig.UnFlashColor"/> while the
+    /// requirement is covered by storage. The third, a prefix on <c>InventoryGui.Update</c>,
+    /// refreshes the crafting panel when the prevent gate flips, so a change in which recipes storage
+    /// makes available is visible at once.
     /// </para>
     /// <para>
-    /// <b>The prevent gate.</b> Both sites obey <see cref="PullKeyRules.AllowByKey"/> — the port of
-    /// CraftFromContainers' <c>AllowByKey()</c>: with the <c>"Switch prevent"</c> setting off (the
-    /// default) holding the prevent key suppresses the mod, and with it on the mod only acts while the
-    /// prevent key is held. When the gate refuses, the click is vanilla and the readout keeps its
-    /// own colour.
+    /// <b>The prevent gate.</b> Every site here obeys <see cref="AllowByKey"/>, and so do the
+    /// storage-aware availability and consume gates in <c>Patches.CraftPatches</c>: the single
+    /// decision is the port of CraftFromContainers' <c>AllowByKey()</c> — with the
+    /// <c>"Switch prevent"</c> setting off (the default) holding the prevent key suppresses the mod,
+    /// and with it on the mod only acts while the prevent key is held. When the gate refuses, the
+    /// click is vanilla, the readout keeps its own text and colour, and crafting falls back to the
+    /// player's own inventory with no pull at all.
     /// </para>
     /// </summary>
     internal static class PullKeyPatches
@@ -38,6 +42,9 @@ namespace CraftFromDrawersAndChests.Patches
 
         /// <summary>The child of a requirement's element that carries its amount, as the game builds it.</summary>
         private const string ResAmountChild = "res_amount";
+
+        /// <summary>The prevent-gate state the last <c>InventoryGui.Update</c> prefix observed, so a flip can be noticed.</summary>
+        private static bool lastAllowed = true;
 
         /// <summary>
         /// Turns a recipe click into a pull while the pull key is held. The pull key is a
@@ -94,12 +101,14 @@ namespace CraftFromDrawersAndChests.Patches
         }
 
         /// <summary>
-        /// Flashes a requirement's amount text while storage covers it, so the player can see that
-        /// the recipe is reachable from chests and drawers rather than only from their own inventory.
-        /// The available amount counts the player's inventory first and only then the eligible
-        /// sources, and only sources a pull could actually take from synchronously. Returns without
-        /// touching the text when the player already holds enough (vanilla's colour stands) or when
-        /// storage still falls short.
+        /// Rewrites a requirement's amount text to the configured resource string and flashes it
+        /// while storage covers it, so the player can see that the recipe is reachable from chests
+        /// and drawers rather than only from their own inventory. The available amount counts the
+        /// player's inventory first and only then the eligible sources, and only sources a pull could
+        /// actually take from synchronously; storage is scanned only when the player is short, as
+        /// CraftFromContainers does. The colour alternates between the flash colours only when
+        /// storage is what closes the gap — a recipe the player already covers keeps vanilla's colour
+        /// — but the readout text is written either way.
         /// </summary>
         [HarmonyPatch(typeof(InventoryGui), "SetupRequirement")]
         [HarmonyPostfix]
@@ -128,23 +137,23 @@ namespace CraftFromDrawersAndChests.Patches
             if (inventory == null)
                 return;
 
+            // The player's own count first; storage is added only when the player is short, exactly as
+            // CraftFromContainers does, so a recipe the player can already pay for is not rescanned.
             int available = PullEngine.CountHeld(inventory, prefab);
-            if (available >= amount)
-                return;
-
-            Vec3 origin = PullEngine.OriginOf(player);
-            IReadOnlyList<IStorageSource> sources = PullEngine.Collect(origin, flags);
-            for (int i = 0; i < sources.Count && available < amount; i++)
+            bool playerShort = available < amount;
+            if (playerShort)
             {
-                IStorageSource source = sources[i];
-                if (source == null || !source.IsValid || !PullEngine.CanServeSynchronously(source))
-                    continue;
+                Vec3 origin = PullEngine.OriginOf(player);
+                IReadOnlyList<IStorageSource> sources = PullEngine.Collect(origin, flags);
+                for (int i = 0; i < sources.Count; i++)
+                {
+                    IStorageSource source = sources[i];
+                    if (source == null || !source.IsValid || !PullEngine.CanServeSynchronously(source))
+                        continue;
 
-                available += source.Count(prefab);
+                    available += source.Count(prefab);
+                }
             }
-
-            if (available < amount)
-                return;
 
             Transform amountTransform = elementRoot.Find(ResAmountChild);
             if (amountTransform == null)
@@ -154,7 +163,42 @@ namespace CraftFromDrawersAndChests.Patches
             if (text == null)
                 return;
 
-            text.color = Mathf.Sin(Time.time * 10f) > 0f ? PluginConfig.FlashColor : PluginConfig.UnFlashColor;
+            // Flash only when storage is what closes the gap; a recipe the player already covers keeps
+            // vanilla's colour. CFC overwrites the readout's text either way.
+            if (playerShort && available >= amount)
+                text.color = Mathf.Sin(Time.time * 10f) > 0f ? PluginConfig.FlashColor : PluginConfig.UnFlashColor;
+
+            text.text = PullKeyRules.ResourceAmountText(flags.ResourceString, available, amount);
+        }
+
+        /// <summary>
+        /// Refreshes the crafting panel when the prevent gate flips, so a change in which recipes
+        /// storage makes available is visible at once. <c>InventoryGui.Update</c> re-checks only the
+        /// selected recipe each frame; the recipe <i>list</i> is rebuilt solely by
+        /// <c>UpdateCraftingPanel</c>, so without this the list would keep the answer it was built
+        /// with until the player reselected. Ported from CraftFromContainers' <c>InventoryGui_Update_Patch</c>.
+        /// The method is private in the shipped game, so it is invoked by reflection.
+        /// </summary>
+        [HarmonyPatch(typeof(InventoryGui), "Update")]
+        [HarmonyPrefix]
+        private static void InventoryGuiUpdatePrefix(InventoryGui __instance, Animator ___m_animator)
+        {
+            bool allowed = AllowByKey();
+            bool changed = allowed != lastAllowed;
+            lastAllowed = allowed;
+
+            if (!changed || __instance == null || ___m_animator == null || !___m_animator.GetBool("visible"))
+                return;
+
+            if (Player.m_localPlayer == null)
+                return;
+
+            System.Reflection.MethodInfo updatePanel =
+                AccessTools.Method(typeof(InventoryGui), "UpdateCraftingPanel", new[] { typeof(bool) });
+            if (updatePanel == null)
+                return;
+
+            updatePanel.Invoke(__instance, new object[] { false });
         }
 
         /// <summary>
@@ -180,10 +224,28 @@ namespace CraftFromDrawersAndChests.Patches
         }
 
         /// <summary>
+        /// Whether this mod may act at all this frame, from the prevent key. The game-facing read of
+        /// <see cref="PullKeyRules.AllowByKey"/>: a missing or disabled snapshot refuses. Shared by
+        /// the pull patches here and the storage-aware availability and consume gates in
+        /// <c>Patches.CraftPatches</c>, so a single answer governs whether storage is substituted and
+        /// whether the shortfall is pulled — the two can never disagree and hand out a free craft.
+        /// </summary>
+        internal static bool AllowByKey()
+        {
+            FeatureFlags flags = PluginConfig.Flags;
+            if (flags == null || !flags.ModEnabled)
+                return false;
+
+            return PullKeyRules.AllowByKey(flags.SwitchPrevent, KeyHeld(flags.PreventModKey));
+        }
+
+        /// <summary>
         /// Whether the configured Unity key name is held this frame. An empty or whitespace value must
         /// never reach <c>Input</c>, which throws on it, and an unrecognised name throws too, so the
         /// call is guarded and a bad value simply reads as "not held" — the same treatment the toggle
-        /// hotkey gives its key.
+        /// hotkey gives its key. The configured value is lower-cased before the lookup, because
+        /// <c>Input.GetKey</c> matches its key names case-sensitively and a user who types
+        /// <c>"Left Ctrl"</c> would otherwise get a silently dead key.
         /// </summary>
         private static bool KeyHeld(string key)
         {
@@ -192,7 +254,7 @@ namespace CraftFromDrawersAndChests.Patches
 
             try
             {
-                return Input.GetKey(key);
+                return Input.GetKey(key.ToLowerInvariant());
             }
             catch
             {

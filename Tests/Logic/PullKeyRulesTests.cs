@@ -121,6 +121,41 @@ namespace CraftFromDrawersAndChests.Tests.Logic
         }
 
         [Test]
+        public void ResourceAmountText_DefaultFormat_ShowsAvailableSlashRequired()
+        {
+            Assert.That(PullKeyRules.ResourceAmountText("{0}/{1}", 2, 5), Is.EqualTo("2/5"));
+        }
+
+        [Test]
+        public void ResourceAmountText_AvailableAboveRequired_ShowsBoth()
+        {
+            // Storage can hold more than the requirement; both numbers are still shown, as CFC does.
+            Assert.That(PullKeyRules.ResourceAmountText("{0}/{1}", 50, 2), Is.EqualTo("50/2"));
+        }
+
+        [Test]
+        public void ResourceAmountText_EmptyOrWhitespace_FallsBackToRequiredAmount()
+        {
+            Assert.That(PullKeyRules.ResourceAmountText(null, 2, 5), Is.EqualTo("5"));
+            Assert.That(PullKeyRules.ResourceAmountText(string.Empty, 2, 5), Is.EqualTo("5"));
+            Assert.That(PullKeyRules.ResourceAmountText("   ", 2, 5), Is.EqualTo("5"));
+        }
+
+        [Test]
+        public void ResourceAmountText_MalformedFormat_FallsBackToRequiredAmountInsteadOfThrowing()
+        {
+            // Unbalanced brace and an out-of-range argument index: string.Format would throw on both.
+            Assert.That(PullKeyRules.ResourceAmountText("{0}/{1", 2, 5), Is.EqualTo("5"));
+            Assert.That(PullKeyRules.ResourceAmountText("{2}", 2, 5), Is.EqualTo("5"));
+        }
+
+        [Test]
+        public void ResourceAmountText_LiteralFormatWithoutArguments_IsReturned()
+        {
+            Assert.That(PullKeyRules.ResourceAmountText("ok", 2, 5), Is.EqualTo("ok"));
+        }
+
+        [Test]
         public void NoRoomMessage_IsNotEmpty()
         {
             Assert.That(PullKeyRules.NoRoomMessage, Is.Not.Empty);

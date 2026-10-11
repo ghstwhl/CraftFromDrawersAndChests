@@ -43,6 +43,16 @@ namespace CraftFromDrawersAndChests.Patches
     /// retried before a line is ever declared failed, so the deterministic case that used to hand out
     /// a free crafted item is closed.
     /// </para>
+    /// <para>
+    /// <b>The prevent gate.</b> All three sites obey <see cref="PullKeyPatches.AllowByKey"/>, the same
+    /// decision the ctrl-click pull applies (<see cref="PullKeyRules.AllowByKey"/>). While the gate
+    /// refuses, storage is not substituted at all — the requirement checks leave vanilla's own answer
+    /// (the player's inventory alone) and the consume prefix lets vanilla consume from that inventory
+    /// with no pull. Because the gate is read again inside <c>DoCrafting</c> and <c>UpdatePlacement</c>
+    /// immediately before they consume, the answer that gated the craft and the answer that governs the
+    /// pull are always the same one, so a craft can never be offered on the strength of storage and
+    /// then paid for with nothing.
+    /// </para>
     /// </summary>
     internal static class CraftPatches
     {
@@ -72,6 +82,11 @@ namespace CraftFromDrawersAndChests.Patches
             Player __instance, Recipe piece, bool discover, int qualityLevel, int amount, ref bool __result)
         {
             if (__result || discover || piece == null || __instance == null || !Enabled())
+                return;
+
+            // The prevent gate: while it refuses, storage is not counted, so the panel shows exactly
+            // vanilla's answer (the player's own inventory) - both here and in the consume prefix.
+            if (!PullKeyPatches.AllowByKey())
                 return;
 
             // See the remarks: a single-ingredient recipe cannot be supplied from storage, so vanilla's
@@ -104,6 +119,11 @@ namespace CraftFromDrawersAndChests.Patches
             if (__result || piece == null || __instance == null || !Enabled())
                 return;
 
+            // The prevent gate, exactly as on the crafting path: while it refuses, a piece's materials
+            // in storage are not counted, so the build answer is vanilla's own.
+            if (!PullKeyPatches.AllowByKey())
+                return;
+
             if (mode != Player.RequirementMode.CanBuild && mode != Player.RequirementMode.CanAlmostBuild)
                 return;
 
@@ -126,6 +146,11 @@ namespace CraftFromDrawersAndChests.Patches
             Player __instance, Piece.Requirement[] requirements, int qualityLevel, int multiplier)
         {
             if (__instance == null || requirements == null || !Enabled())
+                return true;
+
+            // The prevent gate: while it refuses, no pull is performed and vanilla consumes only what
+            // the player's own inventory holds - which is exactly the answer the requirement gate gave.
+            if (!PullKeyPatches.AllowByKey())
                 return true;
 
             IReadOnlyList<IStorageSource> sources;
