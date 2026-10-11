@@ -95,6 +95,13 @@
     <Reference Include="Unity.TextMeshPro">
       <HintPath>$(ReferencesRoot)\Valheim\$(ValheimGameVersion)\Managed\Unity.TextMeshPro.dll</HintPath>
     </Reference>
+    <!-- Valheim's own UI input field. Terminal.m_input is a gui_framework.GuiInputField in the
+         shipping assembly, so the console patch cannot read the typed line without this reference.
+         gui_framework ships unpublicized; GuiInputField is public and derives from
+         TMPro.TMP_InputField, whose Text property is the one read. -->
+    <Reference Include="gui_framework">
+      <HintPath>$(ReferencesRoot)\Valheim\$(ValheimGameVersion)\Managed\gui_framework.dll</HintPath>
+    </Reference>
     <!-- Jotunn (NuGet, restored by tools/Build.ps1 into <repo>\packages) -->
     <Reference Include="Jotunn">
       <HintPath>..\packages\JotunnLib.2.30.2\lib\net462\Jotunn.dll</HintPath>
@@ -120,6 +127,7 @@
     <Compile Include="Logic\ChestTake.cs" />
     <Compile Include="Logic\ChestTypeRules.cs" />
     <Compile Include="Logic\ConfigModel.cs" />
+    <Compile Include="Logic\ConsoleCommandRules.cs" />
     <Compile Include="Logic\DrawerContract.cs" />
     <Compile Include="Logic\DrawerStock.cs" />
     <Compile Include="Logic\DrawerTake.cs" />
@@ -137,6 +145,7 @@
     <Compile Include="Patches\CraftPatches.cs" />
     <Compile Include="Patches\PullKeyPatches.cs" />
     <Compile Include="Patches\StationPatches.cs" />
+    <Compile Include="Patches\TerminalPatch.cs" />
     <Compile Include="Pull\PullEngine.cs" />
     <Compile Include="Storage\ContainerTrackingPatches.cs" />
     <Compile Include="Storage\DrawerApi.cs" />

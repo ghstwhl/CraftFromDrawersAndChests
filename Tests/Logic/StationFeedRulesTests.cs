@@ -107,5 +107,64 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             Assert.That(StationFeedRules.RemainingFuelCapacity(5f, 4f) > 0, Is.True);
             Assert.That(StationFeedRules.RemainingFuelCapacity(5f, 4.5f) > 0, Is.False);
         }
+
+        // ---------------- FillAmount (Task 15b) ----------------
+
+        [Test]
+        public void FillAmount_WithoutTheModifier_IsAlwaysOne()
+        {
+            // CraftFromContainers' `pullAll ? ... : 1` (CFC lines 317, 503, 624): the released key
+            // requests one item per interaction.
+            Assert.That(StationFeedRules.FillAmount(false, 7), Is.EqualTo(1));
+            Assert.That(StationFeedRules.FillAmount(false, 1), Is.EqualTo(1));
+        }
+
+        [Test]
+        public void FillAmount_WithTheModifier_IsTheWholeRemainingCapacity()
+        {
+            Assert.That(StationFeedRules.FillAmount(true, 7), Is.EqualTo(7));
+            Assert.That(StationFeedRules.FillAmount(true, 1), Is.EqualTo(1));
+        }
+
+        [Test]
+        public void FillAmount_FullStation_AsksForNothingEitherWay()
+        {
+            // A station with no room is never fed, modifier or not, so a full station can never cost
+            // the player stock that would sit unused in their inventory.
+            Assert.That(StationFeedRules.FillAmount(false, 0), Is.EqualTo(0));
+            Assert.That(StationFeedRules.FillAmount(true, 0), Is.EqualTo(0));
+            Assert.That(StationFeedRules.FillAmount(true, -3), Is.EqualTo(0));
+            Assert.That(StationFeedRules.FillAmount(false, -3), Is.EqualTo(0));
+        }
+
+        // ---------------- FillAllHint (Task 15b) ----------------
+
+        [Test]
+        public void FillAllHint_UnboundModifier_HidesTheHint()
+        {
+            // CraftFromContainers only appends the hint when the key is bound
+            // (`fillAllModKey.Value?.Length > 0`, CFC line 436).
+            Assert.That(StationFeedRules.FillAllHint(null, "$piece_smelter_add"), Is.Null);
+            Assert.That(StationFeedRules.FillAllHint(string.Empty, "$piece_smelter_add"), Is.Null);
+        }
+
+        [Test]
+        public void FillAllHint_BoundModifier_MatchesCraftFromContainersMarkup()
+        {
+            // The exact shape CFC line 438 appends for the smelter's fuel hover, before localization.
+            Assert.That(
+                StationFeedRules.FillAllHint("left shift", "$piece_smelter_add"),
+                Is.EqualTo("\n[<color=yellow><b>left shift+$KEY_Use</b></color>] $piece_smelter_add max"));
+        }
+
+        [Test]
+        public void FillAllHint_UsesTheSuppliedActionToken()
+        {
+            // The ore hover passes the smelter's own m_addOreTooltip in place of the literal
+            // (CFC line 453).
+            Assert.That(
+                StationFeedRules.FillAllHint("shift", "ore tooltip"),
+                Is.EqualTo("\n[<color=yellow><b>shift+$KEY_Use</b></color>] ore tooltip max"));
+        }
     }
 }

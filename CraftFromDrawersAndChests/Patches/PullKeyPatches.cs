@@ -393,8 +393,12 @@ namespace CraftFromDrawersAndChests.Patches
         /// hotkey gives its key. The configured value is lower-cased before the lookup, because
         /// <c>Input.GetKey</c> matches its key names case-sensitively and a user who types
         /// <c>"Left Ctrl"</c> would otherwise get a silently dead key.
+        /// <para>
+        /// Internal rather than private because the station patches read the fill-all modifier with it
+        /// (<c>StationPatches.FillAllHeld</c>), so every held modifier is read by one implementation.
+        /// </para>
         /// </summary>
-        private static bool KeyHeld(string key)
+        internal static bool KeyHeld(string key)
         {
             if (!ToggleRules.IsKeyConfigured(key))
                 return false;

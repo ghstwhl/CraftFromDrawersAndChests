@@ -54,10 +54,25 @@ namespace CraftFromDrawersAndChests.Patches
     /// turret patch's remarks).
     /// </para>
     /// <para>
-    /// <b>Fill-all is not here.</b> CraftFromContainers reads its fill-all modifier (<c>pullAll</c>)
-    /// in these patches and takes the whole remaining capacity when it is held; that modifier is
-    /// Task 15b. This pass takes one item per interaction, which is CFC's own behaviour when the
-    /// modifier is not held.
+    /// <b>Fill-all.</b> Holding the fill-all modifier (<c>"Fill all mod key"</c>, CraftFromContainers
+    /// 4.0.7's <c>fillAllModKey</c>) makes an interaction ask storage for the station's whole remaining
+    /// capacity instead of a single item. CraftFromContainers reads that modifier in its fireplace
+    /// (<c>pullAll</c>, CFC lines 278/280/317), smelter-ore (464/465/503) and smelter-fuel (580/582/624)
+    /// patches and nowhere else — its cooking-station patches never mention it — so the three matching
+    /// patches here read it and the two cooking-station patches do not. The amount itself is
+    /// <see cref="StationFeedRules.FillAmount"/>; the same modifier also lifts the "the player already
+    /// carries the fuel" guard on the fireplace and the smelter's fuel, exactly as CFC's
+    /// <c>inventory.HaveItem(...) &amp;&amp; !pullAll</c> does (CFC lines 280 and 582). CFC additionally
+    /// lets the modifier override its prevent key on the smelter patches (<c>!AllowByKey() &amp;&amp;
+    /// !pullAll</c>, lines 465 and 582) but not on the fireplace (line 280); this port keeps the prevent
+    /// gate authoritative everywhere and documents that as a deliberate divergence — see the gating
+    /// remarks above.
+    /// </para>
+    /// <para>
+    /// <b>The hint.</b> The smelter's fuel and ore hovers also advertise the modifier with the bracketed
+    /// "[key+Use] … max" line CraftFromContainers appends (CFC lines 429-455). The text is
+    /// <see cref="StationFeedRules.FillAllHint"/> and the two postfixes mirror CFC's own; the fireplace,
+    /// the cooking station and the turret have no such hint in CraftFromContainers and get none here.
     /// </para>
     /// </summary>
     internal static class StationPatches
@@ -235,6 +250,16 @@ namespace CraftFromDrawersAndChests.Patches
         /// had been carrying it. So the item is consumed by the game's own path and this prefix never
         /// writes the fireplace's ZDO.
         /// </para>
+        /// <para>
+        /// <b>Fill-all.</b> While the fill-all modifier is held the pull asks storage for the whole
+        /// remaining capacity instead of a single item — CraftFromContainers' own
+        /// <c>amount = pullAll ? Mathf.Min(m_maxFuel - CeilToInt(fuel), stack) : 1</c>, CFC line 317 —
+        /// and the "the player already carries the fuel" guard above is lifted, as CFC's
+        /// <c>inventory.HaveItem(...) &amp;&amp; !pullAll</c> (line 280) does. Because this port delivers
+        /// into the interacting player's inventory and leaves the station to vanilla's own consumption
+        /// of one item per interaction, the fetched stack is fed to the fire over the following
+        /// interactions rather than all at once; see the class remarks on fill-all.
+        /// </para>
         /// </summary>
         [HarmonyPatch(typeof(Fireplace), "Interact")]
         [HarmonyPrefix]
@@ -259,20 +284,26 @@ namespace CraftFromDrawersAndChests.Patches
                 return true;
 
             // CFC's guard (280) and vanilla's own rule (Fireplace.Interact): while the player already
-            // carries fuel, the interaction is vanilla's — it consumes the player's own item.
-            if (inventory.HaveItem(SharedName(fuelItem)))
+            // carries fuel, the interaction is vanilla's — it consumes the player's own item. The
+            // fill-all modifier lifts this, exactly as CFC's guard does: it reads
+            // `inventory.HaveItem(...) && !pullAll` (line 280), so with the modifier held the pull runs
+            // even when the player is already carrying some fuel.
+            bool fillAll = FillAllHeld(flags);
+            if (!fillAll && inventory.HaveItem(SharedName(fuelItem)))
                 return true;
 
             ZDO zdo = ___m_nview.GetZDO();
             float fuel = zdo != null ? zdo.GetFloat(ZDOVars.s_fuel, 0f) : 0f;
-            if (StationFeedRules.RemainingFuelCapacity(__instance.m_maxFuel, fuel) <= 0)
+            int remaining = StationFeedRules.RemainingFuelCapacity(__instance.m_maxFuel, fuel);
+            if (remaining <= 0)
                 return true;
 
             string prefab = PrefabName(fuelItem);
             if (StationFeedRules.IsDisallowedType(flags.FuelDisallowTypes, prefab))
                 return true;
 
-            PullOne(player, __instance.transform.position, prefab, fuelItem, flags);
+            PullFromStorage(player, __instance.transform.position, prefab, fuelItem, flags,
+                StationFeedRules.FillAmount(fillAll, remaining));
             return true;
         }
 
@@ -309,9 +340,18 @@ namespace CraftFromDrawersAndChests.Patches
                 return true;
 
             // Smelter.GetQueueSize() is private in the shipping assembly: reflect, fail closed.
-            if (!TryInvokeInt(SmelterGetQueueSize, __instance, out int queueSize)
-                || StationFeedRules.RemainingCapacity(__instance.m_maxOre, queueSize) <= 0)
+            if (!TryInvokeInt(SmelterGetQueueSize, __instance, out int queueSize))
                 return true;
+
+            int remaining = StationFeedRules.RemainingCapacity(__instance.m_maxOre, queueSize);
+            if (remaining <= 0)
+                return true;
+
+            // The fill-all modifier widens one request to the whole remaining queue (CFC line 503: the
+            // same `pullAll ? Min(m_maxOre - GetQueueSize(), available) : 1`). It does NOT widen the
+            // "the player already carries an input ore" guard below, mirroring CFC, whose input-ore
+            // test returns true whatever the modifier does (CFC lines 471-482).
+            bool fillAll = FillAllHeld(flags);
 
             List<ItemDrop> inputs = InputItems(__instance.m_conversion);
 
@@ -325,7 +365,7 @@ namespace CraftFromDrawersAndChests.Patches
 
             PullFirstInputs(
                 player, __instance.transform.position,
-                inputs, flags.OreDisallowTypes, flags);
+                inputs, flags.OreDisallowTypes, flags, StationFeedRules.FillAmount(fillAll, remaining));
             return true;
         }
 
@@ -359,22 +399,29 @@ namespace CraftFromDrawersAndChests.Patches
                 return true;
 
             // Smelter.GetFuel() is private in the shipping assembly: reflect, fail closed.
-            if (!TryInvokeFloat(SmelterGetFuel, __instance, out float smelterFuel)
-                || StationFeedRules.RemainingFuelCapacity(__instance.m_maxFuel, smelterFuel) <= 0)
+            if (!TryInvokeFloat(SmelterGetFuel, __instance, out float smelterFuel))
+                return true;
+
+            int remaining = StationFeedRules.RemainingFuelCapacity(__instance.m_maxFuel, smelterFuel);
+            if (remaining <= 0)
                 return true;
 
             ItemDrop fuelItem = __instance.m_fuelItem;
             if (!HasItemData(fuelItem))
                 return true;
 
-            if (inventory.HaveItem(SharedName(fuelItem)))
+            // As on the fireplace, the fill-all modifier lifts the "the player already carries the
+            // fuel" guard, mirroring CFC's `inventory.HaveItem(...) && !pullAll` (CFC line 582).
+            bool fillAll = FillAllHeld(flags);
+            if (!fillAll && inventory.HaveItem(SharedName(fuelItem)))
                 return true;
 
             string prefab = PrefabName(fuelItem);
             if (StationFeedRules.IsDisallowedType(flags.FuelDisallowTypes, prefab))
                 return true;
 
-            PullOne(player, __instance.transform.position, prefab, fuelItem, flags);
+            PullFromStorage(player, __instance.transform.position, prefab, fuelItem, flags,
+                StationFeedRules.FillAmount(fillAll, remaining));
             return true;
         }
 
@@ -420,7 +467,9 @@ namespace CraftFromDrawersAndChests.Patches
             if (StationFeedRules.IsDisallowedType(flags.FuelDisallowTypes, prefab))
                 return true;
 
-            PullOne(player, __instance.transform.position, prefab, fuelItem, flags);
+            // CraftFromContainers' cooking-station fuel patch has no fill-all branch (its
+            // `pullAll` is read only in the three patches above), so this always asks for one.
+            PullFromStorage(player, __instance.transform.position, prefab, fuelItem, flags, 1);
             return true;
         }
 
@@ -497,9 +546,11 @@ namespace CraftFromDrawersAndChests.Patches
             if (InventoryHasInput(inventory, inputs))
                 return true;
 
+            // CraftFromContainers' cooking-station patch has no fill-all branch either, so this
+            // always asks for one.
             PullFirstInputs(
                 player, __instance.transform.position,
-                inputs, flags.OreDisallowTypes, flags);
+                inputs, flags.OreDisallowTypes, flags, 1);
             return true;
         }
 
@@ -571,52 +622,65 @@ namespace CraftFromDrawersAndChests.Patches
                 return true;
             }
 
-            PullOne(player, __instance.transform.position, ammoType, ammo, flags);
+            PullFromStorage(player, __instance.transform.position, ammoType, ammo, flags, 1);
             return true;
         }
 
         /// <summary>
-        /// Pulls one of <paramref name="prefab"/> into <paramref name="player"/>'s inventory from
-        /// storage in range of <paramref name="origin"/> (the station), through the mod's one pull
-        /// entry point. Returns whether anything was actually pulled; a pull that storage cannot cover,
-        /// or that the inventory cannot take, moves nothing.
+        /// Pulls <paramref name="amount"/> of <paramref name="prefab"/> into <paramref name="player"/>'s
+        /// inventory from storage in range of <paramref name="origin"/> (the station), through the
+        /// mod's one pull entry point. Returns whether anything was actually pulled; a pull that
+        /// storage cannot cover, or that the inventory cannot take, moves nothing.
+        /// <para>
+        /// <paramref name="amount"/> is the station's whole remaining capacity while the fill-all
+        /// modifier is held and <c>1</c> otherwise (see <see cref="StationFeedRules.FillAmount"/>). The
+        /// planner asks storage only for the shortfall below what the inventory already holds, so an
+        /// amount the player already carries pulls nothing extra.
+        /// </para>
         /// </summary>
-        private static bool PullOne(Player player, Vector3 origin, string prefab, ItemDrop item, FeatureFlags flags)
+        private static bool PullFromStorage(
+            Player player, Vector3 origin, string prefab, ItemDrop item, FeatureFlags flags, int amount)
         {
-            if (player == null || item == null || string.IsNullOrEmpty(prefab) || flags == null)
+            if (player == null || item == null || string.IsNullOrEmpty(prefab) || flags == null || amount <= 0)
                 return false;
 
             Inventory inventory = player.GetInventory();
             if (inventory == null)
                 return false;
 
-            // One of the station's item, at the quality plane a station consumes at (vanilla's
-            // requirement arithmetic reports m_amount for quality <= 1, which is what a station feed
-            // is). An upgrader resource is never planned for a station: an Idol is only ever consumed
-            // at a crafting station, so allowUpgraderResources is false.
+            // The station's item, at the quality plane a station consumes at (vanilla's requirement
+            // arithmetic reports m_amount for quality <= 1, which is what a station feed is). An upgrader
+            // resource is never planned for a station: an Idol is only ever consumed at a crafting
+            // station, so allowUpgraderResources is false.
             var requirements = new[]
             {
-                new Piece.Requirement { m_amount = 1, m_resItem = item }
+                new Piece.Requirement { m_amount = amount, m_resItem = item }
             };
 
             bool pulled = PullEngine.PullToInventory(
                 requirements, 0, 1, inventory, Origin(origin), flags, false, out bool requested);
 
             if (pulled && requested)
-                Debug(flags, "Station: pulled 1x '" + prefab + "' from storage into " + player.name + "'s inventory.");
+                Debug(flags, "Station: pulled " + amount + "x '" + prefab + "' from storage into " +
+                    player.name + "'s inventory.");
 
             return pulled && requested;
         }
 
         /// <summary>
-        /// Pulls one of the first input in <paramref name="inputs"/> that storage can supply, skipping
-        /// any input whose prefab name is on <paramref name="disallowTypes"/>. Walks the station's own
-        /// input order, so a smelter that accepts several ores asks for the first one the base can
-        /// actually provide, exactly as CraftFromContainers' loop over <c>m_conversion</c> does.
+        /// Pulls <paramref name="amount"/> of the first input in <paramref name="inputs"/> that storage
+        /// can supply, skipping any input whose prefab name is on <paramref name="disallowTypes"/>
+        /// (and taking nothing when the request is zero). Walks the station's own input order, so a
+        /// smelter that accepts several ores asks for the first one the base can actually provide,
+        /// exactly as CraftFromContainers' loop over <c>m_conversion</c> does.
         /// </summary>
         private static bool PullFirstInputs(
-            Player player, Vector3 origin, List<ItemDrop> inputs, string disallowTypes, FeatureFlags flags)
+            Player player, Vector3 origin, List<ItemDrop> inputs, string disallowTypes, FeatureFlags flags,
+            int amount)
         {
+            if (amount <= 0)
+                return false;
+
             for (int i = 0; i < inputs.Count; i++)
             {
                 ItemDrop input = inputs[i];
@@ -630,7 +694,7 @@ namespace CraftFromDrawersAndChests.Patches
                 if (StationFeedRules.IsDisallowedType(disallowTypes, prefab))
                     continue;
 
-                if (PullOne(player, origin, prefab, input, flags))
+                if (PullFromStorage(player, origin, prefab, input, flags, amount))
                     return true;
             }
             return false;
@@ -667,6 +731,53 @@ namespace CraftFromDrawersAndChests.Patches
         }
 
         /// <summary>
+        /// Appends the fill-all hint to the smelter's fuel hover. Mirrors CraftFromContainers 4.0.7's
+        /// <c>Smelter_OnHoverAddFuel_Patch</c> (CFC lines 429-440): the same mod-enabled and
+        /// <c>pullFuel</c> gates, the same "only when the modifier is bound" check, and the same
+        /// localized <c>[key+Use] … max</c> suffix — with CFC's hard-coded <c>$piece_smelter_add</c>.
+        /// </summary>
+        [HarmonyPatch(typeof(Smelter), "OnHoverAddFuel")]
+        [HarmonyPostfix]
+        private static void SmelterOnHoverAddFuelPostfix(ref string __result)
+        {
+            AppendFillAllHint(ref __result, "$piece_smelter_add", PullSetting.Fuel);
+        }
+
+        /// <summary>
+        /// Appends the fill-all hint to the smelter's ore hover, which CraftFromContainers 4.0.7 does
+        /// at CFC lines 444-455: the same gates as the fuel hint, but with the smelter's own
+        /// <c>m_addOreTooltip</c> (public in the shipping assembly) in place of the hard-coded token.
+        /// </summary>
+        [HarmonyPatch(typeof(Smelter), "OnHoverAddOre")]
+        [HarmonyPostfix]
+        private static void SmelterOnHoverAddOrePostfix(Smelter __instance, ref string __result)
+        {
+            AppendFillAllHint(
+                ref __result, __instance != null ? __instance.m_addOreTooltip : null, PullSetting.Ore);
+        }
+
+        /// <summary>
+        /// Appends the fill-all hint to a smelter hover when the mod is on, the matching pull setting is
+        /// on and the modifier is bound. CraftFromContainers gates these two hovers on <c>modEnabled</c>
+        /// and <c>pullFuel</c>/<c>pullOre</c> only (CFC lines 431 and 446) — not on the prevent key — and
+        /// so does this port, because the hint describes what the key <i>would</i> do rather than acting.
+        /// Nothing is appended when the string is unbound or the localizer is unavailable, so a hint
+        /// never displaces the game's own hover text.
+        /// </summary>
+        private static void AppendFillAllHint(ref string result, string action, PullSetting setting)
+        {
+            FeatureFlags flags = PluginConfig.Flags;
+            if (flags == null || !flags.ModEnabled || !PullSettingOn(flags, setting))
+                return;
+
+            string hint = StationFeedRules.FillAllHint(flags.FillAllModKey, action);
+            if (hint == null || Localization.instance == null)
+                return;
+
+            result += Localization.instance.Localize(hint);
+        }
+
+        /// <summary>
         /// The station's own feeding setting, read from the shared snapshot: the mod must be enabled
         /// and the named flag must be on. Null when the snapshot is missing or the setting is off, so
         /// each patch has one line deciding whether it may act at all. A <see cref="FeatureFlags"/> is
@@ -685,17 +796,36 @@ namespace CraftFromDrawersAndChests.Patches
             if (!PullKeyPatches.AllowByKey())
                 return null;
 
+            return PullSettingOn(flags, setting) ? flags : null;
+        }
+
+        /// <summary>Whether the named station setting is on. The one place the three settings map to their flags.</summary>
+        private static bool PullSettingOn(FeatureFlags flags, PullSetting setting)
+        {
+            if (flags == null)
+                return false;
+
             switch (setting)
             {
                 case PullSetting.Fuel:
-                    return flags.PullFuel ? flags : null;
+                    return flags.PullFuel;
                 case PullSetting.Ore:
-                    return flags.PullOre ? flags : null;
+                    return flags.PullOre;
                 case PullSetting.Cooking:
-                    return flags.PullCooking ? flags : null;
+                    return flags.PullCooking;
                 default:
-                    return null;
+                    return false;
             }
+        }
+
+        /// <summary>
+        /// Whether the fill-all modifier (<c>"Fill all mod key"</c>) is held this frame. It is the same
+        /// held-key read every other modifier uses (<see cref="PullKeyPatches.KeyHeld"/>), so an unbound
+        /// or unrecognised key reads as "not held" rather than throwing.
+        /// </summary>
+        private static bool FillAllHeld(FeatureFlags flags)
+        {
+            return flags != null && PullKeyPatches.KeyHeld(flags.FillAllModKey);
         }
 
         /// <summary>Which station setting gates a patch.</summary>
