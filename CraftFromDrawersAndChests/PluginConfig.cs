@@ -132,8 +132,8 @@ namespace CraftFromDrawersAndChests
 
             pullItemsKey = Bind(config, ConfigModel.SectionKeys, ConfigModel.PullItemsKey, "left ctrl",
                 "Held key that pulls a recipe's ingredients into the inventory. Use a Unity key name.");
-            toggleStorageKey = Bind(config, ConfigModel.SectionKeys, ConfigModel.ToggleStorageKey, string.Empty,
-                "Key that toggles a hovered storage on or off. Use a Unity key name; empty leaves the toggle unbound.");
+            toggleStorageKey = Bind(config, ConfigModel.SectionKeys, ConfigModel.ToggleStorageKey, "left shift + e",
+                "Key or key combination that toggles a hovered storage on or off. Write a combination like \"left shift + e\": every name but the last must be held, and the last is pressed. Empty leaves the toggle unbound. AzuCraftyBoxes uses LeftShift+E for the same feature.");
             preventModKey = Bind(config, ConfigModel.SectionKeys, ConfigModel.PreventModKey, ConfigModel.DefaultPreventModKey,
                 "Held key that suppresses this mod's pulling. Use a Unity key name.");
             fillAllModKey = Bind(config, ConfigModel.SectionKeys, ConfigModel.FillAllModKey, ConfigModel.DefaultFillAllModKey,

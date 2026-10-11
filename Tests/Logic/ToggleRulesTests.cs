@@ -137,5 +137,53 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             Assert.That(ToggleRules.InputKeyName("Left Shift"), Is.EqualTo("left shift"));
             Assert.That(ToggleRules.InputKeyName("  left ctrl  "), Is.EqualTo("left ctrl"));
         }
+
+        [Test]
+        public void InputKeyName_ClosedUpModifier_BecomesUnitysTwoWordName()
+        {
+            // Mod documentation usually writes "LeftShift"; Unity's own name is "left shift".
+            Assert.That(ToggleRules.InputKeyName("LeftShift"), Is.EqualTo("left shift"));
+            Assert.That(ToggleRules.InputKeyName("LeftControl"), Is.EqualTo("left ctrl"));
+            Assert.That(ToggleRules.InputKeyName("RightAlt"), Is.EqualTo("right alt"));
+        }
+
+        [Test]
+        public void InputKeyName_UnknownName_PassesThrough()
+        {
+            Assert.That(ToggleRules.InputKeyName("SomeKey"), Is.EqualTo("somekey"));
+        }
+
+        [Test]
+        public void SplitKeys_SingleKey_IsOneToken()
+        {
+            Assert.That(ToggleRules.SplitKeys("n"), Is.EqualTo(new[] { "n" }));
+        }
+
+        [Test]
+        public void SplitKeys_Combination_IsSplitAndNormalised()
+        {
+            Assert.That(ToggleRules.SplitKeys("left shift + e"), Is.EqualTo(new[] { "left shift", "e" }));
+            Assert.That(ToggleRules.SplitKeys("  left shift+e  "), Is.EqualTo(new[] { "left shift", "e" }));
+            Assert.That(ToggleRules.SplitKeys("LeftShift+E"), Is.EqualTo(new[] { "left shift", "e" }));
+        }
+
+        [Test]
+        public void SplitKeys_UnboundOrEmptyParts_AreDropped()
+        {
+            Assert.That(ToggleRules.SplitKeys(null), Is.Empty);
+            Assert.That(ToggleRules.SplitKeys("   "), Is.Empty);
+            Assert.That(ToggleRules.SplitKeys("+"), Is.Empty);
+            Assert.That(ToggleRules.SplitKeys("e+"), Is.EqualTo(new[] { "e" }));
+            Assert.That(ToggleRules.SplitKeys("+e"), Is.EqualTo(new[] { "e" }));
+        }
+
+        [Test]
+        public void ToggleHint_Combination_IsShownAsACombination()
+        {
+            Assert.That(ToggleRules.ToggleHint("left shift + e"),
+                Is.EqualTo(" (press Left Shift + E to toggle)"));
+            Assert.That(ToggleRules.ToggleHint("LeftShift+E"),
+                Is.EqualTo(" (press Left Shift + E to toggle)"));
+        }
     }
 }

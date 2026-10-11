@@ -99,15 +99,24 @@ namespace CraftFromDrawersAndChests.Toggle
         {
             FeatureFlags flags = PluginConfig.Flags;
             string key = flags != null ? flags.ToggleStorageKey : null;
-            if (!ToggleRules.IsKeyConfigured(key))
+            string[] keys = ToggleRules.SplitKeys(key);
+            if (keys.Length == 0)
                 return false;
 
             try
             {
-                // Normalised through the shared helper, exactly as the pull and prevent keys are: a
-                // key name is matched case-sensitively by the input system, so passing the configured
-                // value straight through made "N" or "Left Shift" a silently dead key.
-                return Input.GetKeyDown(ToggleRules.InputKeyName(key));
+                // Every name but the last is a modifier and must be held; the last is the action key and
+                // must be pressed this frame. A single key is just the one-token case of that rule, so
+                // "n" and "left shift + e" need no separate handling. The names arrive already
+                // normalised (ToggleRules.SplitKeys), because the input system matches them
+                // case-sensitively and treats "LeftShift" as an unknown key that throws.
+                for (int i = 0; i < keys.Length - 1; i++)
+                {
+                    if (!Input.GetKey(keys[i]))
+                        return false;
+                }
+
+                return Input.GetKeyDown(keys[keys.Length - 1]);
             }
             catch
             {

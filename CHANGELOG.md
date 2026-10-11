@@ -4,6 +4,27 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-10-12
+
+### Added
+
+- **Key combinations for the per-storage switch, defaulting to `left shift + e`.** AzuCraftyBoxes uses
+  LeftShift+E for the same feature, so the mod now matches it and the switch works out of the box
+  instead of needing a key to be bound first. A combination is written with `+`: every name but the
+  last must be held and the last is pressed, and a single key is just the one-name case of that rule.
+  Spacing and casing do not matter, so `LeftShift+E`, `left shift+e` and `left shift + e` are the same
+  setting, and the hover line shows it as `(press Left Shift + E to toggle)`.
+- Unity spells the modifier keys as two words (`left shift`, `left ctrl`, `left alt`) while mod
+  documentation usually writes them closed up, so the common closed-up spellings are accepted as well
+  and normalised. Every hotkey in the mod shares that normalisation, so the pull, prevent and fill-all
+  keys accept them too.
+
+### Notes
+
+- Shift+E also drives other mods' "store all of this item" convenience, and `E` is Valheim's interact
+  key, so toggling while a chest is under the crosshair may also open it. That overlap is shared with
+  AzuCraftyBoxes, whose convention this is.
+
 ## [0.1.6] - 2026-10-12
 
 ### Fixed

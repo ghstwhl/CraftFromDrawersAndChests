@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Text;
 
 namespace CraftFromDrawersAndChests.Logic
@@ -61,7 +63,78 @@ namespace CraftFromDrawersAndChests.Logic
         /// </summary>
         public static string InputKeyName(string configuredKey)
         {
-            return IsKeyConfigured(configuredKey) ? configuredKey.Trim().ToLowerInvariant() : null;
+            if (!IsKeyConfigured(configuredKey))
+                return null;
+
+            string name = configuredKey.Trim().ToLowerInvariant();
+            return KeyNameAliases.TryGetValue(name, out string mapped) ? mapped : name;
+        }
+
+        /// <summary>
+        /// Unity spells the modifier keys as two words (<c>"left shift"</c>, <c>"left ctrl"</c>,
+        /// <c>"left alt"</c>) while players and other mods' documentation usually write them closed up
+        /// (<c>"LeftShift"</c>). Both spellings are accepted, so the natural way to write a combination
+        /// cannot become a silently dead key. A name that is not listed passes through unchanged, since
+        /// the input system's own spelling is what a working setting has to end up as.
+        /// </summary>
+        private static readonly Dictionary<string, string> KeyNameAliases =
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "leftshift", "left shift" },
+                { "rightshift", "right shift" },
+                { "leftctrl", "left ctrl" },
+                { "leftcontrol", "left ctrl" },
+                { "rightctrl", "right ctrl" },
+                { "rightcontrol", "right ctrl" },
+                { "leftalt", "left alt" },
+                { "rightalt", "right alt" }
+            };
+
+        /// <summary>
+        /// The configured key or key combination split into the individual key names the input system
+        /// takes, in the order written, normalised through <see cref="InputKeyName"/>.
+        /// <para>
+        /// A combination is written with <c>+</c> - <c>"left shift + e"</c> - the convention
+        /// AzuCraftyBoxes uses for this same per-storage switch. Spacing around the <c>+</c> and the
+        /// casing of the names do not matter, and parts that are empty are dropped, so
+        /// <c>"LeftShift+E"</c>, <c>"left shift + e"</c> and <c>"left shift+e"</c> all mean the same
+        /// thing. Never null: an unbound value yields an empty array.
+        /// </para>
+        /// </summary>
+        public static string[] SplitKeys(string configuredKey)
+        {
+            if (!IsKeyConfigured(configuredKey))
+                return Array.Empty<string>();
+
+            string[] parts = configuredKey.Split('+');
+            var keys = new List<string>(parts.Length);
+            for (int i = 0; i < parts.Length; i++)
+            {
+                string key = InputKeyName(parts[i]);
+                if (key != null)
+                    keys.Add(key);
+            }
+
+            return keys.ToArray();
+        }
+
+        /// <summary>
+        /// A configured key or combination as it should read to a player: each part title-cased and
+        /// joined with <c> + </c>, so the stored <c>"left shift + e"</c> shows as
+        /// <c>"Left Shift + E"</c>. An unbound value yields an empty string.
+        /// </summary>
+        private static string DisplayKeyCombo(string configuredKey)
+        {
+            string[] keys = SplitKeys(configuredKey);
+            var builder = new StringBuilder();
+            for (int i = 0; i < keys.Length; i++)
+            {
+                if (i > 0)
+                    builder.Append(" + ");
+                builder.Append(DisplayKeyName(keys[i]));
+            }
+
+            return builder.ToString();
         }
 
         /// <summary>
@@ -80,7 +153,7 @@ namespace CraftFromDrawersAndChests.Logic
         public static string ToggleHint(string configuredKey)
         {
             return IsKeyConfigured(configuredKey)
-                ? " (press " + DisplayKeyName(configuredKey) + " to toggle)"
+                ? " (press " + DisplayKeyCombo(configuredKey) + " to toggle)"
                 : " (no toggle key is set)";
         }
 
