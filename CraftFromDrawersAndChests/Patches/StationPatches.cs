@@ -317,9 +317,22 @@ namespace CraftFromDrawersAndChests.Patches
             if (StationFeedRules.IsDisallowedType(flags.FuelDisallowTypes, prefab))
                 return true;
 
-            PullFromStorage(player, __instance.transform.position, prefab, fuelItem, flags,
-                StationFeedRules.FillAmount(fillAll, remaining), fillAll);
-            return true;
+            if (!fillAll)
+            {
+                PullFromStorage(player, __instance.transform.position, prefab, fuelItem, flags,
+                    StationFeedRules.FillAmount(false, remaining), false);
+                return true;
+            }
+
+            // Fill (Task 15c): feed the fire itself rather than leaving the fuel for vanilla to consume
+            // one unit at a time, so one interaction with the modifier held reaches the fire's maximum -
+            // CraftFromContainers' behaviour. False once anything was fed, so vanilla does not also add
+            // the unit the feed has already placed; true when nothing was fed, which leaves the
+            // interaction vanilla's (including the player's own fuel, if they are carrying any).
+            Vector3 origin = __instance.transform.position;
+            int fed = FeedStation(player, inventory, ___m_nview, flags, remaining, AddFuelRpc,
+                wanted => PullFromStorage(player, origin, prefab, fuelItem, flags, wanted, true) ? prefab : null);
+            return fed <= 0;
         }
 
         /// <summary>
@@ -339,7 +352,8 @@ namespace CraftFromDrawersAndChests.Patches
         /// </summary>
         [HarmonyPatch(typeof(Smelter), "OnAddOre")]
         [HarmonyPrefix]
-        private static bool SmelterOnAddOrePrefix(Smelter __instance, Humanoid user, ItemDrop.ItemData item)
+        private static bool SmelterOnAddOrePrefix(
+            Smelter __instance, Humanoid user, ItemDrop.ItemData item, ZNetView ___m_nview)
         {
             // CFC's guard line (465): an item the player is actively using is vanilla's to add.
             if (__instance == null || item != null)
@@ -378,11 +392,55 @@ namespace CraftFromDrawersAndChests.Patches
             if (InventoryHasInput(inventory, inputs))
                 return true;
 
-            PullFirstInputs(
-                player, __instance.transform.position,
-                inputs, flags.OreDisallowTypes, flags, StationFeedRules.FillAmount(fillAll, remaining),
-                fillAll);
-            return true;
+            if (!fillAll)
+            {
+                PullFirstInputs(
+                    player, __instance.transform.position,
+                    inputs, flags.OreDisallowTypes, flags, StationFeedRules.FillAmount(false, remaining),
+                    false);
+                return true;
+            }
+
+            // Fill (Task 15c): queue the whole remaining capacity in one interaction. Each pass pulls a
+            // batch - so the loop learns which of the smelter's input types storage actually supplied -
+            // and then feeds that input, the same identity vanilla's own discovery would pick. False
+            // once anything was queued, so vanilla does not also add the item the feed has placed.
+            Vector3 origin = __instance.transform.position;
+            int fed = FeedStation(player, inventory, ___m_nview, flags, remaining, AddOreRpc,
+                wanted =>
+                {
+                    if (!PullFirstInputs(player, origin, inputs, flags.OreDisallowTypes, flags, wanted, true))
+                        return null;
+
+                    return FirstInputInInventory(inventory, inputs);
+                });
+            return fed <= 0;
+        }
+
+        /// <summary>
+        /// The prefab name of the first of a smelter's input types the player's inventory currently
+        /// holds, or null. Used by the fill path to name the item it just pulled, so the ore RPC is told
+        /// the prefab the smelter is being fed; it walks the smelter's own <c>m_conversion</c> order, the
+        /// order vanilla's discovery and CraftFromContainers' loop both use.
+        /// </summary>
+        private static string FirstInputInInventory(Inventory inventory, List<ItemDrop> inputs)
+        {
+            if (inventory == null || inputs == null)
+                return null;
+
+            string sharedName = null;
+            for (int i = 0; i < inputs.Count; i++)
+            {
+                ItemDrop input = inputs[i];
+                if (!HasItemData(input))
+                    continue;
+
+                sharedName = SharedName(input);
+                if (inventory.GetItem(sharedName, -1, false) != null)
+                    return PrefabName(input);
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -400,7 +458,8 @@ namespace CraftFromDrawersAndChests.Patches
         /// </summary>
         [HarmonyPatch(typeof(Smelter), "OnAddFuel")]
         [HarmonyPrefix]
-        private static bool SmelterOnAddFuelPrefix(Smelter __instance, Humanoid user, ItemDrop.ItemData item)
+        private static bool SmelterOnAddFuelPrefix(
+            Smelter __instance, Humanoid user, ItemDrop.ItemData item, ZNetView ___m_nview)
         {
             if (__instance == null || item != null)
                 return true;
@@ -436,9 +495,19 @@ namespace CraftFromDrawersAndChests.Patches
             if (StationFeedRules.IsDisallowedType(flags.FuelDisallowTypes, prefab))
                 return true;
 
-            PullFromStorage(player, __instance.transform.position, prefab, fuelItem, flags,
-                StationFeedRules.FillAmount(fillAll, remaining), fillAll);
-            return true;
+            if (!fillAll)
+            {
+                PullFromStorage(player, __instance.transform.position, prefab, fuelItem, flags,
+                    StationFeedRules.FillAmount(false, remaining), false);
+                return true;
+            }
+
+            // Fill (Task 15c): see FireplaceInteractPrefix - the smelter is fed directly rather than left
+            // to consume one unit per interaction.
+            Vector3 origin = __instance.transform.position;
+            int fed = FeedStation(player, inventory, ___m_nview, flags, remaining, AddFuelRpc,
+                wanted => PullFromStorage(player, origin, prefab, fuelItem, flags, wanted, true) ? prefab : null);
+            return fed <= 0;
         }
 
         /// <summary>
@@ -641,6 +710,146 @@ namespace CraftFromDrawersAndChests.Patches
 
             PullFromStorage(player, __instance.transform.position, ammoType, ammo, flags, 1, false);
             return true;
+        }
+
+        /// <summary>The station add RPC that takes no arguments: fuel, for a fireplace, smelter or cooking station.</summary>
+        private const string AddFuelRpc = "RPC_AddFuel";
+
+        /// <summary>The station add RPC for a smelter's ore queue, called with the prefab name and the item's cheated flag.</summary>
+        private const string AddOreRpc = "RPC_AddOre";
+
+        /// <summary>
+        /// The fill path's whole job: repeatedly pull a batch from storage into the player's inventory and
+        /// feed that batch into the station, until the station is full, storage is exhausted, or a pass
+        /// makes no progress. Returns how many units reached the station.
+        /// <para>
+        /// <b>Batched on purpose.</b> One pass can only move what the inventory can accept at that
+        /// moment, so a station needing a hundred ore still fills from a base whose player has three
+        /// free slots; batching is what makes the fill independent of inventory size rather than one
+        /// large request that fails outright. Progress is guaranteed - every pass either feeds at least
+        /// one unit or ends the loop - and the total fed is bounded by the station's remaining capacity,
+        /// so the loop always terminates.
+        /// </para>
+        /// <para>
+        /// <b>Why the inventory is involved at all.</b> The items have to come out of storage through
+        /// <see cref="MultiUserChestBridge"/> - the only sanctioned removal path (Ruling 5) - and that
+        /// path delivers into an <c>Inventory</c>. A fireplace's fuel is a float on its ZDO and a
+        /// smelter's queue is a count, so a station cannot be a removal destination directly. The
+        /// inventory is a one-pass staging area here and nothing lingers in it. (See
+        /// <c>docs/sdd/.../task-15c-design.md</c>.)
+        /// </para>
+        /// </summary>
+        /// <param name="pullOneBatch">
+        /// One pull step: given the number of units this pass may ask for, pulls into the inventory and
+        /// returns the <b>prefab name</b> it left there - or null when nothing arrived, which ends the
+        /// fill. The name is returned rather than assumed because a single-prefab station (a fireplace's
+        /// fuel) and a multi-input one (a smelter's ore) ask storage differently, and the station's add
+        /// RPC has to be told which input the smelter was actually fed.
+        /// </param>
+        private static int FeedStation(
+            Player player, Inventory inventory, ZNetView nview, FeatureFlags flags,
+            int remaining, string rpcName, Func<int, string> pullOneBatch)
+        {
+            if (player == null || inventory == null || nview == null || flags == null || remaining <= 0 ||
+                pullOneBatch == null)
+                return 0;
+
+            int fedTotal = 0;
+            while (fedTotal < remaining)
+            {
+                string prefab = pullOneBatch(remaining - fedTotal);
+                if (prefab == null)
+                    break;
+
+                int fed = FeedStationFromInventory(inventory, nview, prefab, remaining - fedTotal, rpcName);
+                if (fed <= 0)
+                    break;
+
+                fedTotal += fed;
+            }
+
+            return fedTotal;
+        }
+
+        /// <summary>
+        /// Moves up to <paramref name="maxUnits"/> units of <paramref name="prefab"/> from the inventory
+        /// into the station: one unit is removed from the inventory and the station's own add RPC is
+        /// invoked for it, once per unit. Returns how many units were fed.
+        /// <para>
+        /// <b>No duplication is possible.</b> This method removes the unit itself and the RPC only
+        /// advances station-side state, so exactly one unit leaves the inventory per unit the station
+        /// gains. That is why the station's own add <i>method</i> is not used: it is private in the
+        /// shipping assembly, and the public RPC is the shape CraftFromContainers 4.0.7 invokes.
+        /// Both RPC names were verified against the shipping assembly's own literals; the argument
+        /// shapes are CFC's.
+        /// </para>
+        /// </summary>
+        private static int FeedStationFromInventory(
+            Inventory inventory, ZNetView nview, string prefab, int maxUnits, string rpcName)
+        {
+            if (inventory == null || nview == null || string.IsNullOrEmpty(prefab) || maxUnits <= 0)
+                return 0;
+
+            int fed = 0;
+            while (fed < maxUnits)
+            {
+                // Re-located each pass: the previous removal may have emptied the stack entirely.
+                ItemDrop.ItemData stack = FindInventoryStack(inventory, prefab);
+                if (stack == null)
+                    break;
+
+                // Read before the removal: the RPC needs the cheated flag the item was created with,
+                // and the stack may be gone afterwards.
+                bool cheated = stack.m_cheated;
+
+                inventory.RemoveItem(stack, 1);
+                nview.InvokeRPC(rpcName, StationRpcArgs(rpcName, prefab, cheated));
+
+                fed++;
+            }
+
+            return fed;
+        }
+
+        /// <summary>
+        /// The argument shape a station add RPC takes. Ore names its prefab and carries the item's
+        /// cheated flag; fuel takes nothing. Both are CraftFromContainers 4.0.7's own shapes (CFC lines
+        /// 533-536 for ore, 341 for fuel).
+        /// </summary>
+        private static object[] StationRpcArgs(string rpcName, string prefab, bool cheated)
+        {
+            return string.Equals(rpcName, AddOreRpc, StringComparison.Ordinal)
+                ? new object[] { prefab, cheated }
+                : new object[0];
+        }
+
+        /// <summary>
+        /// The largest stack of <paramref name="prefab"/> in <paramref name="inventory"/>, or null.
+        /// Matched on the item's prefab name, the identity every other part of this mod carries for
+        /// storage (Ruling 1); the removal itself goes by stack reference, so no name lookup is needed
+        /// for it. Choosing the largest keeps the common case to one pass.
+        /// </summary>
+        private static ItemDrop.ItemData FindInventoryStack(Inventory inventory, string prefab)
+        {
+            List<ItemDrop.ItemData> items = inventory.GetAllItems();
+            if (items == null)
+                return null;
+
+            ItemDrop.ItemData best = null;
+            for (int i = 0; i < items.Count; i++)
+            {
+                ItemDrop.ItemData candidate = items[i];
+                if (candidate == null || candidate.m_dropPrefab == null)
+                    continue;
+
+                if (!string.Equals(candidate.m_dropPrefab.name, prefab, StringComparison.Ordinal))
+                    continue;
+
+                if (best == null || candidate.m_stack > best.m_stack)
+                    best = candidate;
+            }
+
+            return best;
         }
 
         /// <summary>

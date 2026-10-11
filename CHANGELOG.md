@@ -4,6 +4,38 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-10-12
+
+### Added
+
+- **Fill-to-max now fills the station itself.** Holding `Fill all mod key` on a fireplace, a smelter's
+  fuel or a smelter's ore asks storage for the station's whole remaining capacity and delivers it
+  **into the station**, so one interaction reaches the maximum instead of pre-loading the player's
+  inventory for vanilla to consume one unit at a time. This is CraftFromContainers' behaviour, and it
+  is the parity the owner ruled for in Task 15c.
+  - The feed drives the station's own replicated add RPC (`RPC_AddFuel`, `RPC_AddOre`) — the same two
+    shapes CraftFromContainers invokes — and it removes each unit from the inventory itself, so exactly
+    one unit leaves the inventory per unit the station gains and nothing can be duplicated.
+  - It works in batches: a pass moves only what the inventory can accept at that moment, so a station
+    needing a hundred ore still fills from a base whose player has three free slots.
+  - A cooking station keeps CraftFromContainers' one-item-per-interaction behaviour. CFC has no fill
+    branch for it, so this matches the oracle rather than "improving" on it.
+
+### Changed
+
+- **`Maximum range` now defaults to 10, and 0 (or less) means unlimited** — both matching
+  CraftFromContainers (CFC's `ContainerRange` default and its `maxRange.Value <= 0` test). A player
+  arriving from CFC no longer silently loses storage that this mod's 4-unit default excluded, and a
+  `0` carried over from CFC no longer disables the mod with nothing in the log to explain it. Both
+  range consumers — the chest/drawer filter and the drawer query's own filter — now read one rule, so
+  `0` cannot mean unlimited for one kind of storage and nothing for the other.
+
+### Notes
+
+- One **deliberate** parity gap: a fill with a *completely* full inventory takes nothing, where CFC
+  would still succeed because its items never pass through the inventory. That is the same limit this
+  mod's single-item station feeding already has. See the Task 15c design record in `docs/sdd/`.
+
 ## [0.1.7] - 2026-10-12
 
 ### Added
