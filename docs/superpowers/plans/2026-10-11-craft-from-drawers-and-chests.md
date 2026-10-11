@@ -28,6 +28,18 @@
 - **No Nexus publishing.** There is no `nexusID` config entry and no Nexus-flavoured README. Packaging is Thunderstore format: team `NorCal_Nerds`, package `CraftFromDrawersAndChests`. Hexium is a listing, not a second package format.
 - **Odin's QoL compatibility is out of scope** — build no stack-size or weight-modifier shims, and read no Odin's QoL config.
 
+## Review Focus
+
+The spec implies these conditions, and no task's own tests prove them cleanly on their own. Each is pinned to a test or an in-game check in the task that owns the code.
+
+1. **A requirement larger than everything within range.** Nothing may be consumed, and the recipe must not be offered as craftable. (Task 4's infeasible-plan test; Task 13's in-game check)
+2. **A player inventory with no free stack space.** Nothing may be pulled, and nothing may land on the ground. (Task 4's infeasible-plan test; Task 14's in-game check)
+3. **Two players acting on the same chest at once.** The item must leave storage exactly once, whichever way the request is routed. (Task 11's in-game check)
+4. **A drawer whose ZDO reports a prefab but a zero amount.** It contributes nothing and throws nothing. (Task 9's test)
+5. **Item Drawers absent, or its API type renamed again.** The mod runs chest-only, throws nothing, and does not silently half-work. (Task 9's test)
+
+---
+
 ## File Structure
 
 ```
@@ -167,16 +179,29 @@ git commit -m "build: scaffold product and Logic test projects"
 - [ ] **Step 1: Write the failing tests**
 
 ```csharp
-[TestCase("piece_chest_wood(Clone)", true)]
-[TestCase("piece_chest_private(Clone)", false)]   // private rule off by default fixture
-public void WoodChest_IsExcludedOnlyWhenRuleOn(string name, bool woodRuleOn) { ... }
+[Test] public void WoodChest_IsExcludedWhenRuleOn()
+{
+    var r = new ChestTypeRules { IgnoreWoodChests = true };
+    Assert.That(r.IsExcluded("piece_chest_wood(Clone)", false, false), Is.True);
+}
+
+[Test] public void WoodChest_IsKeptWhenRuleOff()
+{
+    var r = new ChestTypeRules();
+    Assert.That(r.IsExcluded("piece_chest_wood(Clone)", false, false), Is.False);
+}
 
 [Test] public void ReinforcedRule_DoesNotMatchWoodChest()
 {
     var r = new ChestTypeRules { IgnoreReinforcedChests = true };
     Assert.That(r.IsExcluded("piece_chest_wood(Clone)", false, false), Is.False);
 }
-[Test] public void ShipContainer_IsExcludedWhenParentIsShip() { ... }
+
+[Test] public void ShipContainer_IsExcludedWhenParentIsShip()
+{
+    var r = new ChestTypeRules { IgnoreShipContainers = true };
+    Assert.That(r.IsExcluded("piece_chest(Clone)", true, false), Is.True);
+}
 ```
 
 Exact prefix rules, copied from CraftFromContainers 4.0.7: wood `piece_chest_wood(`, private `piece_chest_private(`, black metal `piece_chest_blackmetal(`, reinforced `piece_chest(`.
