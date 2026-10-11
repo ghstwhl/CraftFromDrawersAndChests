@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{3F7A1E2B-6C4D-4E8A-9B0F-1A2C3D4E5F60}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>CraftFromDrawersAndChests</RootNamespace>
+    <AssemblyName>CraftFromDrawersAndChests</AssemblyName>
+    <TargetFrameworkIdentifier>.NETFramework</TargetFrameworkIdentifier>
+    <TargetFrameworkVersion>v4.6.2</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <LangVersion>10</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <AutoUnifyAssemblyReferences>true</AutoUnifyAssemblyReferences>
+    <MSBuildWarningsAsMessages>MSB3277;MSB3245;MSB3243</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <NoWarn>MSB3245;MSB3243;MSB3277</NoWarn>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <NoWarn>MSB3245;MSB3243;MSB3277</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- BepInEx 5.x core (HarmonyX comes with it) -->
+    <Reference Include="BepInEx">
+      <HintPath>$(ReferencesRoot)\BepInEx\$(BepInExVersion)\BepInEx\core\BepInEx.dll</HintPath>
+    </Reference>
+    <Reference Include="BepInEx.Harmony">
+      <HintPath>$(ReferencesRoot)\BepInEx\$(BepInExVersion)\BepInEx\core\BepInEx.Harmony.dll</HintPath>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(ReferencesRoot)\BepInEx\$(BepInExVersion)\BepInEx\core\0Harmony.dll</HintPath>
+    </Reference>
+    <!-- Publicized Valheim game assemblies -->
+    <Reference Include="assembly_valheim">
+      <HintPath>$(ReferencesRoot)\Valheim\$(ValheimGameVersion)\assembly_valheim_publicized.dll</HintPath>
+    </Reference>
+    <Reference Include="assembly_utils">
+      <HintPath>$(ReferencesRoot)\Valheim\$(ValheimGameVersion)\assembly_utils_publicized.dll</HintPath>
+    </Reference>
+    <Reference Include="assembly_guiutils">
+      <HintPath>$(ReferencesRoot)\Valheim\$(ValheimGameVersion)\assembly_guiutils_publicized.dll</HintPath>
+    </Reference>
+    <Reference Include="assembly_postprocessing">
+      <HintPath>$(ReferencesRoot)\Valheim\$(ValheimGameVersion)\assembly_postprocessing_publicized.dll</HintPath>
+    </Reference>
+    <!-- Unity runtime modules + TextMeshPro -->
+    <Reference Include="$(ReferencesRoot)\Valheim\$(ValheimGameVersion)\Managed\UnityEngine*.dll" />
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(ReferencesRoot)\Valheim\$(ValheimGameVersion)\Managed\Unity.TextMeshPro.dll</HintPath>
+    </Reference>
+    <!-- Jotunn (NuGet, restored by tools/Build.ps1 into <repo>\packages) -->
+    <Reference Include="Jotunn">
+      <HintPath>..\packages\JotunnLib.2.30.2\lib\net462\Jotunn.dll</HintPath>
+    </Reference>
+    <!-- MultiUserChest: the only supported chest-removal path -->
+    <Reference Include="MultiUserChest">
+      <HintPath>$(ReferencesRoot)\Mods\MultiUserChest.dll</HintPath>
+    </Reference>
+    <!-- .NET Framework -->
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Xml.Linq" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Logic\Geometry.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

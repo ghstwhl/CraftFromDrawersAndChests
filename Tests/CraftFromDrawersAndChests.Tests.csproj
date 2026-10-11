@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net462</TargetFramework>
+    <LangVersion>10</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>CraftFromDrawersAndChests.Tests</RootNamespace>
+    <AssemblyName>CraftFromDrawersAndChests.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NUnit" Version="3.14.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+  </ItemGroup>
+
+  <!-- The Logic folder is linked, not referenced: the product assembly needs the game DLLs
+       loaded at runtime, so the pure decision logic is compiled straight into the test assembly. -->
+  <ItemGroup>
+    <Compile Include="..\CraftFromDrawersAndChests\Logic\**\*.cs" LinkBase="Logic" />
+  </ItemGroup>
+
+</Project>

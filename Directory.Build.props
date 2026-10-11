@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <ValheimGameVersion>1.0.16</ValheimGameVersion>
+    <BepInExVersion>5.4.2350</BepInExVersion>
+    <ReferencesRoot>$(MSBuildThisFileDirectory).references</ReferencesRoot>
+  </PropertyGroup>
+</Project>
