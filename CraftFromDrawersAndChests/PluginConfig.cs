@@ -90,7 +90,7 @@ namespace CraftFromDrawersAndChests
             modEnabled = Bind(config, ConfigModel.SectionServer, ConfigModel.ModEnabled, true,
                 "Enable this mod.");
             maxRange = Bind(config, ConfigModel.SectionServer, ConfigModel.MaxRange, ConfigModel.DefaultMaxRange,
-                "The maximum distance at which storage is used. Measured from the player, or from the station for the fuel, ore and cooking features.");
+                "The maximum distance at which storage is used. Measured from the player, or from the station for the fuel, ore and cooking features. 0 or less means unlimited, matching CraftFromContainers.");
             enableChests = Bind(config, ConfigModel.SectionServer, ConfigModel.EnableChests, ConfigModel.DefaultEnableChests,
                 "Pull from vanilla chests.");
             enableDrawers = Bind(config, ConfigModel.SectionServer, ConfigModel.EnableDrawers, ConfigModel.DefaultEnableDrawers,

@@ -81,8 +81,7 @@ namespace CraftFromDrawersAndChests.Logic
             if (c.ToggledOff)
                 return false;
 
-            float sqrRange = range * range;
-            if (c.Position.SqrDistanceTo(origin) > sqrRange)
+            if (!IsWithinRange(range, c.Position.SqrDistanceTo(origin)))
                 return false;
 
             // A drawer is a ZNetView, not a Container: it has no chest type, no Piece parent, no
@@ -104,6 +103,30 @@ namespace CraftFromDrawersAndChests.Logic
             // components. A null name selects no name-based rule.
             string objectName = c.ObjectName ?? string.Empty;
             return !chestRules.IsExcluded(objectName, c.ParentIsShip, c.ParentIsWagon);
+        }
+
+        /// <summary>
+        /// Whether a squared distance counts as being inside <paramref name="range"/>.
+        /// <para>
+        /// A non-positive range means <b>unlimited</b>, not zero-scope. This is CraftFromContainers'
+        /// behaviour (<c>maxRange.Value <= 0 || Vector3.Distance(center, ...) < maxRange.Value</c>,
+        /// CFC 4.0.7 line 173) and the owner's ruling after preparing a test package: a player carrying
+        /// a <c>0</c> over from CFC otherwise gets a silently dead mod, with nothing in the log to say
+        /// why, because a zero radius excludes every container that is not exactly at the origin.
+        /// </para>
+        /// <para>
+        /// Both range consumers read this one predicate - <see cref="IsEligible"/> for chests and
+        /// drawers, and <c>DrawerApi</c> for the drawer query's own filter - so a non-positive range
+        /// cannot mean unlimited for one kind of storage and nothing for the other. Squared distances
+        /// are compared, so no square root is needed, and a distance exactly equal to the range counts
+        /// as inside.
+        /// </para>
+        /// </summary>
+        /// <param name="range">The configured maximum range; zero or less means unlimited.</param>
+        /// <param name="sqrDistance">The squared distance from the pull origin to the candidate.</param>
+        public static bool IsWithinRange(float range, float sqrDistance)
+        {
+            return range <= 0f || sqrDistance <= range * range;
         }
     }
 }

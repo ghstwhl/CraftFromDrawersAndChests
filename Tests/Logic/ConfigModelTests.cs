@@ -36,7 +36,10 @@ namespace CraftFromDrawersAndChests.Tests.Logic
         public void Defaults_MaxRangeIsFour()
         {
             // 4f, matching CFC's usable default.
-            Assert.That(ConfigModel.DefaultMaxRange, Is.EqualTo(4f));
+            // CraftFromContainers 4.0.7's own default (CFC "ContainerRange", 10f), by the owner's ruling
+            // in Task 15e: this project shipped 4f, which silently excluded storage a player arriving
+            // from CFC expected to be usable. Pinned here so changing it can only be deliberate.
+            Assert.That(ConfigModel.DefaultMaxRange, Is.EqualTo(10f));
         }
 
         [Test]

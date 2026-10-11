@@ -189,5 +189,69 @@ namespace CraftFromDrawersAndChests.Tests.Logic
                 Eligibility.IsEligible(c, Origin, 10f, chestsEnabled: true, drawersEnabled: true, rules),
                 Is.True);
         }
+
+        [Test]
+        public void RangeZero_MeansUnlimited()
+        {
+            // CraftFromContainers parity, by the owner's ruling (Task 15e). CFC treats a non-positive
+            // range as unlimited, so a player carrying a 0 over from it used to get a silently dead mod
+            // here: a zero radius excludes every container that is not exactly at the origin, and
+            // nothing in the log said why. A chest 1000 away must therefore be in range when it is 0.
+            var c = Chest(new Vec3(1000f, 0f, 0f));
+
+            Assert.That(
+                Eligibility.IsEligible(c, Origin, 0f, chestsEnabled: true, drawersEnabled: true, new ChestTypeRules()),
+                Is.True);
+        }
+
+        [Test]
+        public void NegativeRange_MeansUnlimited()
+        {
+            var c = Chest(new Vec3(1000f, 0f, 0f));
+
+            Assert.That(
+                Eligibility.IsEligible(c, Origin, -5f, chestsEnabled: true, drawersEnabled: true, new ChestTypeRules()),
+                Is.True);
+        }
+
+        [Test]
+        public void RangeZero_MeansUnlimitedForDrawersToo()
+        {
+            // Both kinds of storage read the one rule, so a non-positive range cannot mean unlimited for
+            // a chest and nothing for a drawer.
+            var drawer = Drawer(new Vec3(1000f, 0f, 0f));
+
+            Assert.That(
+                Eligibility.IsEligible(drawer, Origin, 0f, chestsEnabled: false, drawersEnabled: true, new ChestTypeRules()),
+                Is.True);
+        }
+
+        [Test]
+        public void RangeZero_StillObeysTheOtherChecks()
+        {
+            // Unlimited range must not become "ignores every other rule": a switched-off storage is
+            // still excluded.
+            var c = Chest(new Vec3(1000f, 0f, 0f), toggledOff: true);
+
+            Assert.That(
+                Eligibility.IsEligible(c, Origin, 0f, chestsEnabled: true, drawersEnabled: true, new ChestTypeRules()),
+                Is.False);
+        }
+
+        [Test]
+        public void IsWithinRange_PositiveRangeStillLimits()
+        {
+            // The unlimited case must not have disabled the ordinary one.
+            Assert.That(Eligibility.IsWithinRange(10f, 0f), Is.True);
+            Assert.That(Eligibility.IsWithinRange(10f, 100f), Is.True, "distance exactly equal to the range is inside");
+            Assert.That(Eligibility.IsWithinRange(10f, 100.25f), Is.False, "just beyond the range is outside");
+        }
+
+        [Test]
+        public void IsWithinRange_NonPositiveRangeIsUnlimited()
+        {
+            Assert.That(Eligibility.IsWithinRange(0f, float.MaxValue), Is.True);
+            Assert.That(Eligibility.IsWithinRange(-1f, float.MaxValue), Is.True);
+        }
     }
 }

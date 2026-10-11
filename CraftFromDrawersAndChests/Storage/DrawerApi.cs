@@ -151,7 +151,6 @@ namespace CraftFromDrawersAndChests.Storage
             if (raw == null)
                 return NoHandles;
 
-            float sqrRange = range * range;
             var handles = new List<DrawerHandle>();
             foreach (object item in raw)
             {
@@ -160,7 +159,10 @@ namespace CraftFromDrawersAndChests.Storage
                     continue;
 
                 Vector3 p = view.transform.position;
-                if (new Vec3(p.x, p.y, p.z).SqrDistanceTo(origin) > sqrRange)
+
+                // The same range rule the chest path uses (Eligibility.IsWithinRange), so a
+                // non-positive range cannot mean unlimited for chests and nothing for drawers.
+                if (!Eligibility.IsWithinRange(range, new Vec3(p.x, p.y, p.z).SqrDistanceTo(origin)))
                     continue;
 
                 ZDO zdo = view.GetZDO();

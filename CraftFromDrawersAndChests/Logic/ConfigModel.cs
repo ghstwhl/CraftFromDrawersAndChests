@@ -46,7 +46,12 @@ namespace CraftFromDrawersAndChests.Logic
         public const string IsDebug = "Debug";
 
         // Defaults: the values the ConfigEntry definitions use, so no default is written twice.
-        public const float DefaultMaxRange = 4f;
+        //
+        // The range default is CraftFromContainers 4.0.7's (CFC "ContainerRange", 10f), chosen by the
+        // owner for parity over this project's own tighter 4f: a player arriving from CFC expects the
+        // storage they can see to be usable, and a shorter default silently excludes chests they had
+        // been relying on. A non-positive value means unlimited - see Eligibility.IsWithinRange.
+        public const float DefaultMaxRange = 10f;
         public const bool DefaultEnableChests = true;
         public const bool DefaultEnableDrawers = true;
         public const bool DefaultLeaveOne = false;
