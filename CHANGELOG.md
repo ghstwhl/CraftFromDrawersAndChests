@@ -4,6 +4,20 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.10] - 2026-10-12
+
+### Fixed
+
+- **The station feed could leave the unit in the player's inventory.** The feed removed it by stack
+  reference (`Inventory.RemoveItem(stack, 1)`). Vanilla's own consumption and CraftFromContainers both
+  remove by **name** (`Inventory.RemoveItem(<shared name>, <amount>)`), and a reference-based removal
+  that quietly does nothing left station fuel and ore in the player's backpack — reported from play on
+  both the single-item and the fill path, which is what pointed at the feed itself rather than at the
+  amount. The removal now uses the same overload vanilla uses.
+- The feed checks that each removal actually took effect (an item count before and after) and stops
+  with a logged warning if it did not, so a removal that does nothing can never again starve a station
+  while quietly filling an inventory. It also stops rather than looping on such a removal.
+
 ## [0.1.9] - 2026-10-12
 
 ### Fixed

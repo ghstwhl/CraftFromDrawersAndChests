@@ -806,10 +806,29 @@ namespace CraftFromDrawersAndChests.Patches
                 // Read before the removal: the RPC needs the cheated flag the item was created with,
                 // and the stack may be gone afterwards.
                 bool cheated = stack.m_cheated;
+                string sharedName = stack.m_shared != null ? stack.m_shared.m_name : null;
 
-                inventory.RemoveItem(stack, 1);
+                int before = CountInventory(inventory, prefab);
+
+                // Removed by NAME, not by stack reference. Vanilla's own consumption and
+                // CraftFromContainers both use Inventory.RemoveItem(<shared name>, <amount>), and a
+                // reference-based removal that quietly does nothing is exactly what put station fuel
+                // in a player's backpack in play (reported 2026-10-12).
+                inventory.RemoveItem(sharedName, 1);
+
+                int after = CountInventory(inventory, prefab);
+                if (after >= before)
+                {
+                    // Never leave a removal that did not take effect invisible, and never loop on it:
+                    // the unit is still where it was, so the station would starve while the inventory
+                    // filled up.
+                    Log.LogWarning(ModInfo.ModName + ": the station feed could not remove '" + prefab +
+                                   "' from the inventory, so it was left where it was and the feed stopped " +
+                                   "rather than repeating a removal that is not taking effect.");
+                    break;
+                }
+
                 nview.InvokeRPC(rpcName, StationRpcArgs(rpcName, prefab, cheated));
-
                 fed++;
             }
 
@@ -826,6 +845,33 @@ namespace CraftFromDrawersAndChests.Patches
             return string.Equals(rpcName, AddOreRpc, StringComparison.Ordinal)
                 ? new object[] { prefab, cheated }
                 : new object[0];
+        }
+
+        /// <summary>
+        /// How many items of <paramref name="prefab"/> the inventory holds, counted on the item's prefab
+        /// name so it matches <see cref="FindInventoryStack"/> exactly (Ruling 1: storage is keyed by
+        /// prefab name everywhere in this mod). Used by the station feed to confirm a removal took
+        /// effect. Deliberately not <c>Inventory.CountItems</c>, which matches the localized shared name
+        /// and whose quality argument this mod would otherwise be guessing at.
+        /// </summary>
+        private static int CountInventory(Inventory inventory, string prefab)
+        {
+            List<ItemDrop.ItemData> items = inventory.GetAllItems();
+            if (items == null)
+                return 0;
+
+            int total = 0;
+            for (int i = 0; i < items.Count; i++)
+            {
+                ItemDrop.ItemData item = items[i];
+                if (item == null || item.m_dropPrefab == null)
+                    continue;
+
+                if (string.Equals(item.m_dropPrefab.name, prefab, StringComparison.Ordinal))
+                    total += item.m_stack;
+            }
+
+            return total;
         }
 
         /// <summary>
