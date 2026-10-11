@@ -237,7 +237,7 @@ git commit -m "feat: chest type exclusion rules"
 
 **Interfaces:**
 - Consumes: `Vec3` (Task 1), `ChestTypeRules` (Task 2).
-- Produces: `enum StorageKind { Chest, Drawer }`; `readonly struct StorageCandidate` with public readonly fields `Kind`, `Position` (`Vec3`), `ObjectName`, `ParentIsShip`, `ParentIsWagon`, `ToggledOff`, `HasAccess`, `HasInventory`; `static bool Eligibility.IsEligible(in StorageCandidate c, Vec3 origin, float range, bool chestsEnabled, bool drawersEnabled, ChestTypeRules chestRules)`.
+- Produces: `enum StorageKind { Chest, Drawer }`; `readonly struct StorageCandidate` with public readonly fields `Kind`, `Position` (`Vec3`), `ObjectName`, `ParentIsShip`, `ParentIsWagon`, `ToggledOff`, `HasAccess`, `HasInventory`, `IsInsidePiece`, `PassesGuardStone`; `static bool Eligibility.IsEligible(in StorageCandidate c, Vec3 origin, float range, bool chestsEnabled, bool drawersEnabled, ChestTypeRules chestRules)`.
 
 - [ ] **Step 1: Write the failing tests**
 
