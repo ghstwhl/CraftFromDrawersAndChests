@@ -225,11 +225,34 @@ namespace CraftFromDrawersAndChests
         /// <summary>
         /// Binds one entry. Every entry is marked <c>IsAdminOnly</c>, which Jötunn requires for an
         /// entry to be synchronised, and which is what locks it for non-admins.
+        /// <para>
+        /// Every entry re-reads the whole snapshot when it changes, so an edit made while the game is
+        /// running - through the ConfigurationManager (F1), or anything else that writes the entry -
+        /// takes effect immediately. Without this the snapshot moved only on Jötunn's server push, so a
+        /// setting changed in game appeared to do nothing until the next world load or a
+        /// <c>cfdac reset</c>: a configured toggle key still read as unset on the hover line and its key
+        /// never fired. Re-reading everything is deliberate - the snapshot is a single object, and a
+        /// partly refreshed one would let a patch observe a combination of values that never existed.
+        /// </para>
         /// </summary>
         private static ConfigEntry<T> Bind<T>(ConfigFile config, string section, string key, T defaultValue, string description)
         {
-            return config.Bind(section, key, defaultValue,
+            ConfigEntry<T> entry = config.Bind(section, key, defaultValue,
                 new ConfigDescription(description, null, new ConfigurationManagerAttributes { IsAdminOnly = true }));
+
+            entry.SettingChanged += OnSettingChanged;
+            return entry;
+        }
+
+        /// <summary>
+        /// BepInEx's entry-change handler. The whole snapshot is re-read rather than the one property
+        /// that changed; see <see cref="Bind"/> for why.
+        /// </summary>
+        private static void OnSettingChanged(object sender, System.EventArgs e)
+        {
+            FeatureFlags flags = Flags;
+            if (flags != null)
+                ReadInto(flags);
         }
     }
 }

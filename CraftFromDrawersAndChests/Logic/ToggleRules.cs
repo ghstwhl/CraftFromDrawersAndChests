@@ -50,6 +50,21 @@ namespace CraftFromDrawersAndChests.Logic
         }
 
         /// <summary>
+        /// A configured key name in the form the input system accepts, or null when nothing is bound.
+        /// <para>
+        /// Trimmed and lower-cased, because <c>Input.GetKey</c> and <c>Input.GetKeyDown</c> match key
+        /// names case-sensitively: without this, a setting written as <c>"N"</c> or <c>"Left Shift"</c>
+        /// is a silently dead key. Both this mod's hotkeys read through this one implementation - the
+        /// per-storage toggle and the pull, prevent and fill-all keys - so their treatment of a
+        /// configured name cannot drift apart.
+        /// </para>
+        /// </summary>
+        public static string InputKeyName(string configuredKey)
+        {
+            return IsKeyConfigured(configuredKey) ? configuredKey.Trim().ToLowerInvariant() : null;
+        }
+
+        /// <summary>
         /// The hover hint that names the key which flips a storage's switch, or states plainly that no
         /// key is bound. It sits alongside <see cref="HoverSuffix"/>, which reports the state but not
         /// how to change it - and this setting is server-authoritative, so a client cannot necessarily

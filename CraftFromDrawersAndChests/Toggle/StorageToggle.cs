@@ -104,7 +104,10 @@ namespace CraftFromDrawersAndChests.Toggle
 
             try
             {
-                return Input.GetKeyDown(key);
+                // Normalised through the shared helper, exactly as the pull and prevent keys are: a
+                // key name is matched case-sensitively by the input system, so passing the configured
+                // value straight through made "N" or "Left Shift" a silently dead key.
+                return Input.GetKeyDown(ToggleRules.InputKeyName(key));
             }
             catch
             {

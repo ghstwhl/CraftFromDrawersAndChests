@@ -4,6 +4,25 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2026-10-12
+
+### Fixed
+
+- **A setting changed while the game is running now takes effect at once.** The mod reads its
+  configuration through a snapshot that was only rewritten by Jötunn's server push, so a value edited
+  in the ConfigurationManager (F1) changed the entry but not the snapshot: a toggle key set in game
+  still read as unset on the storage hover line, and pressing it did nothing, until the next world
+  load or a `cfdac reset`. Every entry now re-reads the snapshot when it changes.
+- **A toggle key written with a capital letter was silently dead.** The input system matches key names
+  case-sensitively and the toggle hotkey passed the configured value through unchanged, so `N` or
+  `Left Shift` never fired — while the pull and prevent keys lower-cased theirs. Every hotkey now
+  reads through one shared normalisation (`ToggleRules.InputKeyName`), which also trims spaces.
+
+### Notes
+
+- A key setting takes a **single** Unity key name (`n`, `left shift`, `mouse 0`), not a combination,
+  so a config editor's key-capture cannot express something like Ctrl+E.
+
 ## [0.1.5] - 2026-10-12
 
 ### Added

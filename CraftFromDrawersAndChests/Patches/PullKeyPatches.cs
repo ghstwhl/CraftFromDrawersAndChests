@@ -408,7 +408,9 @@ namespace CraftFromDrawersAndChests.Patches
 
             try
             {
-                return Input.GetKey(key.ToLowerInvariant());
+                // The same normalisation the per-storage toggle reads through (ToggleRules.InputKeyName),
+                // so a configured name is treated identically by every hotkey in the mod.
+                return Input.GetKey(ToggleRules.InputKeyName(key));
             }
             catch
             {

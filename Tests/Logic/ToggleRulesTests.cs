@@ -119,5 +119,23 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             string line = "Wood chest" + ToggleRules.HoverSuffix(false) + ToggleRules.ToggleHint("n");
             Assert.That(line, Is.EqualTo("Wood chest<color=#55FF55> (pull: on)</color> (press N to toggle)"));
         }
+
+        [Test]
+        public void InputKeyName_Unbound_IsNull()
+        {
+            Assert.That(ToggleRules.InputKeyName(null), Is.Null);
+            Assert.That(ToggleRules.InputKeyName(string.Empty), Is.Null);
+            Assert.That(ToggleRules.InputKeyName("   "), Is.Null);
+        }
+
+        [Test]
+        public void InputKeyName_IsTrimmedAndLowerCased()
+        {
+            // The input system matches key names case-sensitively, so this is what keeps a setting
+            // written as "N" or "Left Shift" from being a silently dead key.
+            Assert.That(ToggleRules.InputKeyName("N"), Is.EqualTo("n"));
+            Assert.That(ToggleRules.InputKeyName("Left Shift"), Is.EqualTo("left shift"));
+            Assert.That(ToggleRules.InputKeyName("  left ctrl  "), Is.EqualTo("left ctrl"));
+        }
     }
 }
