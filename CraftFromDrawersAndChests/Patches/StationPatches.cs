@@ -317,21 +317,16 @@ namespace CraftFromDrawersAndChests.Patches
             if (StationFeedRules.IsDisallowedType(flags.FuelDisallowTypes, prefab))
                 return true;
 
-            if (!fillAll)
-            {
-                PullFromStorage(player, __instance.transform.position, prefab, fuelItem, flags,
-                    StationFeedRules.FillAmount(false, remaining), false);
-                return true;
-            }
-
-            // Fill (Task 15c): feed the fire itself rather than leaving the fuel for vanilla to consume
-            // one unit at a time, so one interaction with the modifier held reaches the fire's maximum -
-            // CraftFromContainers' behaviour. False once anything was fed, so vanilla does not also add
-            // the unit the feed has already placed; true when nothing was fed, which leaves the
-            // interaction vanilla's (including the player's own fuel, if they are carrying any).
+            // Feed the fire directly - one unit normally, the whole remaining capacity while the fill
+            // modifier is held (Task 15c) - so fuel never passes through the player's inventory. Leaving
+            // the unit for vanilla to consume instead is what put fuel in a full inventory and, with no
+            // room at all, kept the fire unfed. CraftFromContainers feeds at both amounts (its
+            // `pullAll ? Min(m_maxFuel - CeilToInt(fuel), available) : 1`, CFC line 317), and reports the
+            // interaction consumed once it has fed, which is what swallowing the prefix does here.
             Vector3 origin = __instance.transform.position;
-            int fed = FeedStation(player, inventory, ___m_nview, flags, remaining, AddFuelRpc,
-                wanted => PullFromStorage(player, origin, prefab, fuelItem, flags, wanted, true) ? prefab : null);
+            int fed = FeedStation(player, inventory, ___m_nview, flags,
+                StationFeedRules.FillAmount(fillAll, remaining), AddFuelRpc,
+                wanted => PullFromStorage(player, origin, prefab, fuelItem, flags, wanted, fillAll) ? prefab : null);
             return fed <= 0;
         }
 
@@ -353,7 +348,7 @@ namespace CraftFromDrawersAndChests.Patches
         [HarmonyPatch(typeof(Smelter), "OnAddOre")]
         [HarmonyPrefix]
         private static bool SmelterOnAddOrePrefix(
-            Smelter __instance, Humanoid user, ItemDrop.ItemData item, ZNetView ___m_nview)
+            Smelter __instance, Humanoid user, ItemDrop.ItemData item, ZNetView ___m_nview, ref bool __result)
         {
             // CFC's guard line (465): an item the player is actively using is vanilla's to add.
             if (__instance == null || item != null)
@@ -392,28 +387,27 @@ namespace CraftFromDrawersAndChests.Patches
             if (InventoryHasInput(inventory, inputs))
                 return true;
 
-            if (!fillAll)
-            {
-                PullFirstInputs(
-                    player, __instance.transform.position,
-                    inputs, flags.OreDisallowTypes, flags, StationFeedRules.FillAmount(false, remaining),
-                    false);
-                return true;
-            }
-
-            // Fill (Task 15c): queue the whole remaining capacity in one interaction. Each pass pulls a
-            // batch - so the loop learns which of the smelter's input types storage actually supplied -
-            // and then feeds that input, the same identity vanilla's own discovery would pick. False
-            // once anything was queued, so vanilla does not also add the item the feed has placed.
+            // Queue the ore directly - one unit normally, the whole remaining queue while the fill
+            // modifier is held (Task 15c) - so ore never passes through the player's inventory. Leaving
+            // the unit for vanilla to consume instead is what queued ore out of a full inventory and,
+            // with no room at all, left the queue unfilled. CraftFromContainers feeds at both amounts
+            // (its `pullAll ? Min(m_maxOre - GetQueueSize(), available) : 1`, CFC line 503).
             Vector3 origin = __instance.transform.position;
-            int fed = FeedStation(player, inventory, ___m_nview, flags, remaining, AddOreRpc,
+            int fed = FeedStation(player, inventory, ___m_nview, flags,
+                StationFeedRules.FillAmount(fillAll, remaining), AddOreRpc,
                 wanted =>
                 {
-                    if (!PullFirstInputs(player, origin, inputs, flags.OreDisallowTypes, flags, wanted, true))
+                    if (!PullFirstInputs(player, origin, inputs, flags.OreDisallowTypes, flags, wanted, fillAll))
                         return null;
 
                     return FirstInputInInventory(inventory, inputs);
                 });
+
+            // Swallow the interaction once anything was queued so vanilla does not add a second item,
+            // but report it as handled - the value CraftFromContainers sets (CFC line 569).
+            if (fed > 0)
+                __result = true;
+
             return fed <= 0;
         }
 
@@ -459,7 +453,7 @@ namespace CraftFromDrawersAndChests.Patches
         [HarmonyPatch(typeof(Smelter), "OnAddFuel")]
         [HarmonyPrefix]
         private static bool SmelterOnAddFuelPrefix(
-            Smelter __instance, Humanoid user, ItemDrop.ItemData item, ZNetView ___m_nview)
+            Smelter __instance, Humanoid user, ItemDrop.ItemData item, ZNetView ___m_nview, ref bool __result)
         {
             if (__instance == null || item != null)
                 return true;
@@ -495,18 +489,21 @@ namespace CraftFromDrawersAndChests.Patches
             if (StationFeedRules.IsDisallowedType(flags.FuelDisallowTypes, prefab))
                 return true;
 
-            if (!fillAll)
-            {
-                PullFromStorage(player, __instance.transform.position, prefab, fuelItem, flags,
-                    StationFeedRules.FillAmount(false, remaining), false);
-                return true;
-            }
-
-            // Fill (Task 15c): see FireplaceInteractPrefix - the smelter is fed directly rather than left
-            // to consume one unit per interaction.
+            // Feed the station directly - one unit normally, the whole remaining capacity while the fill
+            // modifier is held (Task 15c) - so fuel never passes through the player's inventory. Leaving
+            // the unit for vanilla to consume instead is what put fuel in a full inventory and, with no
+            // room at all, left the fire unfed. CraftFromContainers feeds at both amounts (its
+            // `pullAll ? Min(m_maxFuel - GetFuel(), available) : 1`, CFC line 624).
             Vector3 origin = __instance.transform.position;
-            int fed = FeedStation(player, inventory, ___m_nview, flags, remaining, AddFuelRpc,
-                wanted => PullFromStorage(player, origin, prefab, fuelItem, flags, wanted, true) ? prefab : null);
+            int fed = FeedStation(player, inventory, ___m_nview, flags,
+                StationFeedRules.FillAmount(fillAll, remaining), AddFuelRpc,
+                wanted => PullFromStorage(player, origin, prefab, fuelItem, flags, wanted, fillAll) ? prefab : null);
+
+            // Swallow the interaction once anything was fed so vanilla does not add a second item, but
+            // report it as handled - the value CraftFromContainers sets (CFC line 592).
+            if (fed > 0)
+                __result = true;
+
             return fed <= 0;
         }
 
@@ -522,7 +519,8 @@ namespace CraftFromDrawersAndChests.Patches
         [HarmonyPatch(typeof(CookingStation), "OnAddFuelSwitch")]
         [HarmonyPrefix]
         private static bool CookingStationOnAddFuelSwitchPrefix(
-            CookingStation __instance, Humanoid user, ItemDrop.ItemData item)
+            CookingStation __instance, Humanoid user, ItemDrop.ItemData item, ZNetView ___m_nview,
+            ref bool __result)
         {
             if (__instance == null || item != null)
                 return true;
@@ -552,11 +550,18 @@ namespace CraftFromDrawersAndChests.Patches
             if (StationFeedRules.IsDisallowedType(flags.FuelDisallowTypes, prefab))
                 return true;
 
-            // CraftFromContainers' cooking-station fuel patch has no fill-all branch (its
-            // `pullAll` is read only in the three patches above), so this always asks for one — and
-            // with a request of one a fill plan and the all-or-nothing plan are the same plan.
-            PullFromStorage(player, __instance.transform.position, prefab, fuelItem, flags, 1, false);
-            return true;
+            // CraftFromContainers' cooking-station fuel patch has no fill-all branch (its `pullAll` is
+            // read only in the three patches above), so this always asks for one - and with a request of
+            // one a fill plan and the all-or-nothing plan are the same plan. The unit is fed straight
+            // into the fire rather than left in the inventory (Task 15c), as CFC does (CFC line 376).
+            Vector3 origin = __instance.transform.position;
+            int fed = FeedStation(player, inventory, ___m_nview, flags, 1, AddFuelRpc,
+                wanted => PullFromStorage(player, origin, prefab, fuelItem, flags, wanted, false) ? prefab : null);
+
+            if (fed > 0)
+                __result = true;
+
+            return fed <= 0;
         }
 
         /// <summary>

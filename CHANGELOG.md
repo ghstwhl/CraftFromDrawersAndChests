@@ -4,6 +4,31 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - 2026-10-12
+
+### Fixed
+
+- **Station feeding no longer routes items through the player's inventory.** 0.1.8 wired the *fill*
+  path to deliver into the station but left the single-item path — one `E` press — pre-loading the
+  player's inventory for vanilla to consume. Reported from play: with a full inventory that put the
+  item in the player's backpack instead of the station, and with no room at all it left the station
+  unfed. CraftFromContainers feeds the station at *both* amounts (`pullAll ? Min(capacity - used,
+  available) : 1`), so all four feedable paths — a fireplace's fuel, a smelter's fuel and ore, and a
+  cooking station's fire — now remove the unit and drive the station's own replicated add RPC
+  directly, at one unit or at the whole remaining capacity. The unit is fed in the same frame it is
+  taken, so the inventory never holds it: a full inventory now means only that no more can be taken,
+  not that items land in the wrong place.
+- The Smelter and CookingStation prefixes report the interaction as handled (`__result = true`) once
+  they feed, which is the value CraftFromContainers sets; the fireplace reports it consumed, its own
+  value there.
+
+### Notes
+
+- Cooking *food* still stages through the player's inventory and cannot avoid it: the game hands a
+  cookable over as an item reference (`FindCookableItem`) with no add RPC to drive, and this mod may
+  not mutate a container's inventory directly (Ruling 5). A completely full inventory can therefore
+  still stop a cooking station being stocked.
+
 ## [0.1.8] - 2026-10-12
 
 ### Added
