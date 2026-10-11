@@ -773,6 +773,44 @@ git commit -m "feat: station pulls and console command"
 
 ---
 
+### Task 16: Cut the 1.0.0 release
+
+**Files:**
+- Modify: `CraftFromDrawersAndChests/ModInfo.cs` — `Version` becomes `"1.0.0"`
+- Modify: `manifest.json` — `version_number` becomes `"1.0.0"`
+- Modify: `CHANGELOG.md` — a `1.0.0` entry
+
+**Interfaces:**
+- Consumes: `ModInfo` (Task 6). `tools/Build.ps1` fails the build when `ModInfo.Version` and `manifest.json`'s `version_number` disagree, so the two must be bumped together.
+- Produces: nothing later depends on it.
+
+- [ ] **Step 1: Confirm the branch is green before touching the version**
+
+Run: `dotnet test Tests\CraftFromDrawersAndChests.Tests.csproj`
+Expected: 41 passing, 0 failing.
+
+- [ ] **Step 2: Bump the version in both places at once**
+
+`ModInfo.cs`: `Version = "1.0.0"`. `manifest.json`: `"version_number": "1.0.0"`. Add a `1.0.0` section to `CHANGELOG.md` describing this as the first release.
+
+- [ ] **Step 3: Build the release**
+
+Run: `powershell -ExecutionPolicy Bypass -File .\tools\Build.ps1 -Configuration Release`
+Expected: `BUILD OK - CraftFromDrawersAndChests 1.0.0 (Release)`, with `Release\NorCal_Nerds-CraftFromDrawersAndChests\plugins\CraftFromDrawersAndChests.dll` and both zips refreshed.
+
+- [ ] **Step 4: Hand the package to the author for in-game validation**
+
+This step is the author's, not the builder's. Give them the release folder and the consolidated checklist at `.superpowers/sdd/<plan>/author-verify.md`, which collects every task's in-game check. **Nothing is published until they have run it**, and publishing is a stop-and-ask action.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add CraftFromDrawersAndChests/ModInfo.cs manifest.json CHANGELOG.md
+git commit -m "release: 1.0.0"
+```
+
+---
+
 ## Self-Review
 
 **1. Spec coverage**
@@ -799,6 +837,7 @@ git commit -m "feat: station pulls and console command"
 | Toolchain re-pointed at this mod | 6 |
 | Odin's QoL compatibility | **dropped** — Odin's QoL is not in the mod set |
 | `nexusID` | **dropped** — publishing is Thunderstore and possibly Hexium, never Nexus |
+| Cut the 1.0.0 release | 16 |
 
 Two spec items are **dropped rather than planned**, both settled by the author: Odin's QoL is not in the mod set, and publishing is Thunderstore (and possibly Hexium), never Nexus. Nothing here is waiting on an answer.
 
