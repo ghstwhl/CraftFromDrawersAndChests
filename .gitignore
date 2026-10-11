@@ -11,6 +11,9 @@ Release/
 tools/.cache/
 
 # Superpowers workspace: the installer's .superpowers junction plus SDD scratch
+# (a Windows junction to a clone of the public Superpowers plugin -- an embedded git repo,
+# so this repository can only ever record it as a gitlink. The durable parts of the SDD record
+# are copied into docs/sdd/ instead; see docs/sdd/README.md.)
 .superpowers/
 
 # IDE
