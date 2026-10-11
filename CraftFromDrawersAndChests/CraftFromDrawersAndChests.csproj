@@ -86,7 +86,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Logic\ChestTypeRules.cs" />
+    <Compile Include="Logic\Eligibility.cs" />
     <Compile Include="Logic\Geometry.cs" />
+    <Compile Include="Logic\StorageKind.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
