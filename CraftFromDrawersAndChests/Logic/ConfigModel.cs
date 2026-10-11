@@ -20,6 +20,9 @@ namespace CraftFromDrawersAndChests.Logic
         public const string MaxRange = "Maximum range";
         public const string PullItemsKey = "Pull items key";
         public const string ToggleStorageKey = "Toggle storage key";
+        public const string PreventModKey = "Prevent mod key";
+        public const string FillAllModKey = "Fill all mod key";
+        public const string SwitchPrevent = "Switch prevent";
         public const string EnableChests = "Enable chests";
         public const string EnableDrawers = "Enable drawers";
         public const string LeaveOne = "Leave one";
@@ -48,6 +51,12 @@ namespace CraftFromDrawersAndChests.Logic
         public const bool DefaultEnableDrawers = true;
         public const bool DefaultLeaveOne = false;
         public const bool DefaultPullByDistance = false;
+
+        // The two held-modifier keys default to CFC 4.0.7's values. switchPrevent stays off, so out
+        // of the box holding the prevent key suppresses pulling rather than enabling it.
+        public const string DefaultPreventModKey = "left alt";
+        public const string DefaultFillAllModKey = "left shift";
+        public const bool DefaultSwitchPrevent = false;
 
         /// <summary>
         /// The per-storage off-switch key. A single boolean stored under this key on the

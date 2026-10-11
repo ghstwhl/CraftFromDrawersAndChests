@@ -52,5 +52,15 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             Assert.That(ConfigModel.DefaultLeaveOne, Is.False);
             Assert.That(ConfigModel.DefaultPullByDistance, Is.False);
         }
+
+        [Test]
+        public void Defaults_PreventAndFillAllKeysAndSwitch()
+        {
+            // CFC 4.0.7's held-modifier defaults. switchPrevent is off, so out of the box the
+            // prevent key means "holding it suppresses pulling", not "holding it enables it".
+            Assert.That(ConfigModel.DefaultPreventModKey, Is.EqualTo("left alt"));
+            Assert.That(ConfigModel.DefaultFillAllModKey, Is.EqualTo("left shift"));
+            Assert.That(ConfigModel.DefaultSwitchPrevent, Is.False);
+        }
     }
 }

@@ -7,6 +7,13 @@ namespace CraftFromDrawersAndChests.Logic
     /// can consume it and the tests can run outside the game. The defaults live in
     /// <see cref="ConfigModel"/>; this type is populated by the config layer, not defaulted here.
     /// </summary>
+    /// <remarks>
+    /// Single writer: <c>Config.ReadInto</c> (Task 8) is the only code that assigns to these
+    /// properties, and it runs from <c>Plugin.Awake</c> before any Harmony patch is applied, so
+    /// every patch observes a fully populated snapshot. Because the type is deliberately
+    /// non-defaulted, a consumer that skipped that read would see every flag false; consumers must
+    /// read the shared instance the config layer fills in, not construct their own.
+    /// </remarks>
     public sealed class FeatureFlags
     {
         public bool ModEnabled { get; set; }
@@ -16,6 +23,9 @@ namespace CraftFromDrawersAndChests.Logic
 
         public string PullItemsKey { get; set; }
         public string ToggleStorageKey { get; set; }
+        public string PreventModKey { get; set; }
+        public string FillAllModKey { get; set; }
+        public bool SwitchPrevent { get; set; }
 
         public bool EnableChests { get; set; }
         public bool EnableDrawers { get; set; }
@@ -30,8 +40,6 @@ namespace CraftFromDrawersAndChests.Logic
 
         public string ResourceString { get; set; }
         public string PulledMessage { get; set; }
-        public string FlashColor { get; set; }
-        public string UnFlashColor { get; set; }
 
         public bool IgnoreShipContainers { get; set; }
         public bool IgnoreWagonContainers { get; set; }
