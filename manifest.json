@@ -1,0 +1,11 @@
+{
+  "name": "CraftFromDrawersAndChests",
+  "version_number": "0.1.0",
+  "website_url": "https://github.com/ghstwhl/CraftFromDrawersAndChests",
+  "description": "Craft and build from nearby chests and KG Item Drawers drawers. Every player and the server need it.",
+  "dependencies": [
+    "denikson-BepInExPack_Valheim-5.4.2350",
+    "ValheimModding-Jotunn-2.30.2",
+    "MSchmoecker-MultiUserChest-0.6.2"
+  ]
+}
