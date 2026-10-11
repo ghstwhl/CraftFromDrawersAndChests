@@ -49,19 +49,17 @@ namespace CraftFromDrawersAndChests.Tests.Logic
         [Test]
         public void ShouldIntercept_PullKeyNotHeldWithSwitchOff_IsFalse()
         {
-            // With the switch off, holding the prevent key suppresses the mod anyway; a missing pull
-            // key refuses for its own reason. Neither state may consume the press.
+            // With the switch off the prevent gate ALLOWS when the prevent key is not held, so this
+            // state isolates the pull key: without it the press is not ours.
             Assert.That(Intercepts(pullKeyHeld: false, preventKeyHeld: false, switchPrevent: false), Is.False);
-            Assert.That(Intercepts(pullKeyHeld: false, preventKeyHeld: true, switchPrevent: false), Is.False);
         }
 
         [Test]
         public void ShouldIntercept_PullKeyNotHeldWithSwitchOn_IsFalse()
         {
-            // With the switch on the prevent gate alone allows (prevent held) or refuses (prevent not
-            // held); the pull key must be required in both, so a missing one never intercepts.
+            // With the switch on the prevent gate ALLOWS when the prevent key IS held, so this state
+            // isolates the pull key the other way round: it is still required.
             Assert.That(Intercepts(pullKeyHeld: false, preventKeyHeld: true, switchPrevent: true), Is.False);
-            Assert.That(Intercepts(pullKeyHeld: false, preventKeyHeld: false, switchPrevent: true), Is.False);
         }
 
         [Test]
@@ -128,12 +126,38 @@ namespace CraftFromDrawersAndChests.Tests.Logic
         [Test]
         public void PlacementStatusOf_NullField_IsMinusOne()
         {
-            // The reader half of the gate: a null field value (a renamed or absent
-            // Player.m_placementStatus) becomes the -1 sentinel, which IsPlacementValid treats as not
-            // valid — so the press is swallowed rather than pulling on an unknown layout. Only the
-            // predicate side was pinned before; this half would degrade silently otherwise.
+            // The value-shape contract of the conversion: a null value converts to the -1 sentinel,
+            // which IsPlacementValid treats as not valid. The failure that actually happens in the game
+            // (a renamed field, so the field never resolves) is pinned separately by
+            // PlacementStatusFrom_UnresolvedField_FailsClosed.
             Assert.That(BuildPullRules.PlacementStatusOf(null), Is.EqualTo(-1));
             Assert.That(BuildPullRules.IsPlacementValid(BuildPullRules.PlacementStatusOf(null)), Is.False);
+        }
+
+        [Test]
+        public void PlacementStatusFrom_UnresolvedField_FailsClosed()
+        {
+            // The real degradation path: a later game version renames Player.m_placementStatus, so the
+            // game-facing AccessTools.Field lookup returns null before any value can be read. The press
+            // must then be swallowed with nothing pulled and nothing placed.
+            Assert.That(
+                BuildPullRules.PlacementStatusFrom(fieldResolved: false, fieldValue: null), Is.EqualTo(-1));
+            Assert.That(
+                BuildPullRules.PlacementStatusFrom(fieldResolved: false, fieldValue: 0), Is.EqualTo(-1),
+                "an unresolved field ignores whatever value is handed alongside it");
+            Assert.That(
+                BuildPullRules.IsPlacementValid(BuildPullRules.PlacementStatusFrom(false, null)), Is.False);
+        }
+
+        [Test]
+        public void PlacementStatusFrom_ResolvedField_ReadsItsValue()
+        {
+            Assert.That(BuildPullRules.PlacementStatusFrom(true, 0), Is.EqualTo(0));
+            Assert.That(BuildPullRules.IsPlacementValid(BuildPullRules.PlacementStatusFrom(true, 0)), Is.True);
+            Assert.That(BuildPullRules.PlacementStatusFrom(true, 5), Is.EqualTo(5));
+            Assert.That(
+                BuildPullRules.PlacementStatusFrom(true, null), Is.EqualTo(-1),
+                "a resolved-but-unreadable value is still unreadable");
         }
 
         [Test]

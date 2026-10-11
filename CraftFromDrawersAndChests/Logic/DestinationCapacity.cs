@@ -259,10 +259,12 @@ namespace CraftFromDrawersAndChests.Logic
 
         /// <summary>
         /// Whether a destination stack is free space for a delivery: the exact predicate
-        /// <see cref="DrawerTake.IsSameItem"/> (name by ordinal, quality and world level all equal),
-        /// so a partial stack of the same name at a different quality is not counted as room for this
-        /// delivery — and the held-stock count that decides a pull's shortfall matches on exactly the
-        /// same rule.
+        /// <see cref="DrawerTake.IsSameItem"/> (name by ordinal, quality and world level all equal), so
+        /// a partial stack of the same name at a different quality is not counted as room for this
+        /// delivery. This is the <b>destination</b> identity; the <b>source</b> half — what a pull may
+        /// subtract as already held — is deliberately looser and counted by shared name alone
+        /// (<see cref="DrawerTake.HeldAmount"/>), because quality is not the identity vanilla consumes
+        /// by.
         /// </summary>
         private static bool Matches(DrawerTake.InventoryStack stack, Delivery delivery)
         {

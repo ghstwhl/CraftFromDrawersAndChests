@@ -140,6 +140,29 @@ namespace CraftFromDrawersAndChests.Logic
         }
 
         /// <summary>
+        /// The numeric placement status from the private <c>Player.m_placementStatus</c> field, given
+        /// whether that field could be resolved at all and, when it could, the raw value read from it.
+        /// This is the <b>game-facing degradation path</b> kept pure so it can be pinned: the
+        /// game-facing patch resolves the field once by reflection
+        /// (<c>AccessTools.Field(typeof(Player), "m_placementStatus")</c>, as CraftFromContainers does at
+        /// its line 1115), and a later game version that renames the field makes that lookup return
+        /// <c>null</c> before any value can be read.
+        /// <para>
+        /// A field that did not resolve reads as the <c>-1</c> sentinel, which
+        /// <see cref="IsPlacementValid"/> treats as <b>not</b> valid, so a renamed field fails closed:
+        /// the press is swallowed with nothing pulled and nothing placed, rather than pulling on a
+        /// layout whose status is unknown. <see cref="PlacementStatusOf"/> covers the other half — the
+        /// <i>value</i> of a field that did resolve, including one that cannot be converted.
+        /// </para>
+        /// </summary>
+        /// <param name="fieldResolved">Whether the private field was found (false when it was renamed or removed).</param>
+        /// <param name="fieldValue">The boxed value read from the resolved field; ignored when the field was not resolved.</param>
+        public static int PlacementStatusFrom(bool fieldResolved, object fieldValue)
+        {
+            return fieldResolved ? PlacementStatusOf(fieldValue) : -1;
+        }
+
+        /// <summary>
         /// The decision for an attack press that <see cref="ShouldIntercept"/> already accepted. Ports
         /// CraftFromContainers' branch order exactly (CFC lines 1108-1123), which is significant
         /// because the branches disagree: a repair piece is handed to vanilla, whereas a missing piece,

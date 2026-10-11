@@ -178,9 +178,11 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             Assert.That(DrawerTake.CanDeliver(19, 20, 18, 0), Is.False, "one over the sum, no empty slot");
         }
 
-        // IsSameItem is the single item-identity predicate both halves of the availability question
-        // match on: the delivery's free-space check (MatchingFreeStackSpace) and the held-stock count
-        // that decides a pull's shortfall (MatchingAmount). Pinning it pins both.
+        // IsSameItem is the DESTINATION identity: the delivery's free-space check
+        // (MatchingFreeStackSpace) and the strict count MatchingAmount both match on it, so pinning it
+        // pins that pair. The SOURCE half — the held count a pull subtracts — deliberately does not:
+        // it is counted by shared name alone (see HeldAmountTests) so it can never fall below what
+        // vanilla consumes.
 
         [Test]
         public void IsSameItem_MatchesOnlyNameQualityAndWorldLevel()
@@ -232,9 +234,10 @@ namespace CraftFromDrawersAndChests.Tests.Logic
         [Test]
         public void MatchingAmount_IsTheMirrorOfMatchingFreeStackSpace()
         {
-            // Same stacks, same predicate: a full matching stack is held (counts towards the shortfall)
-            // yet offers no free space. A pull can therefore subtract the held amount and still prove
-            // room for the remainder without a stack falling between the two rules.
+            // Same stacks, same predicate: a full matching stack is counted by MatchingAmount yet
+            // offers no free space. This is the strict pair the destination half is built from. The
+            // source half is deliberately looser (HeldAmount, name only), which is what keeps a
+            // shortfall a superset of what vanilla consumes — see HeldAmountTests.
             var inventory = new[]
             {
                 Stack("$item_wood", 1, 0, 5, 20),

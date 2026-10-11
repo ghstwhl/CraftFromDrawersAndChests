@@ -86,12 +86,12 @@ namespace CraftFromDrawersAndChests.Pull
         /// <summary>
         /// Turns requirements into the planner's requests, each reduced to the part the player does
         /// <b>not</b> already hold — the shortfall below <c>GetAmount(qualityLevel) * multiplier</c>.
-        /// The held amount is read from <paramref name="inventory"/> with the same three-part item
-        /// identity the destination model matches on (shared name, <b>quality</b>, world level; see
-        /// <see cref="DrawerTake.MatchingAmount"/>), so a stack counts towards a requirement only when
-        /// it really is the item the requirement names — the two halves of the availability question
-        /// cannot disagree about which stacks are the item. A requirement the player already covers
-        /// produces no request at all.
+        /// The held amount is counted by <b>shared name alone</b> (<see cref="DrawerTake.HeldAmount"/>):
+        /// every same-name stack counts, whatever its quality or world level. That makes the count a
+        /// <b>superset</b> of the amount vanilla will consume — vanilla's consume identity is the shared
+        /// name and its requirement test counts with quality <c>-1</c> — so the shortfall it produces
+        /// can never be inflated past what vanilla would truly take. A requirement the player already
+        /// covers produces no request at all.
         /// <para>
         /// This is the entry point the crafting and building pulls (and their requirement gates) share.
         /// It deliberately diverges from CraftFromContainers, which asks storage for the whole
@@ -115,14 +115,15 @@ namespace CraftFromDrawersAndChests.Pull
 
         /// <summary>
         /// How many of each requirement's item the inventory already holds, keyed by the requirement's
-        /// prefab name (the identifier the requests use). A held stack counts only when it is the same
-        /// item as the requirement names — shared name, quality and world level — the one predicate
-        /// <see cref="DrawerTake.MatchingAmount"/> exposes, so what is counted as held here is exactly
-        /// what would be counted as room for the delivery of that same item. A requirement with no
-        /// resolvable item contributes no entry (it produces no request either), and two requirements
-        /// that share a prefab name share the first entry — the planner keys its stock by that name too.
-        /// The inventory is reduced to the pure stack view at most once, and only if there is a
-        /// requirement whose identity can be read.
+        /// prefab name (the identifier the requests use). The amount itself is
+        /// <see cref="DrawerTake.HeldAmount"/> — counted by the item's <b>shared name</b>, ignoring
+        /// quality and world level — the superset of what vanilla consumes that the shortfall depends
+        /// on. The <i>key</i> stays the prefab name because that is what the requests and the storage
+        /// layer share; the requirement's own item supplies the shared name to count by. A requirement
+        /// with no resolvable item contributes no entry (it produces no request either), and two
+        /// requirements that share a prefab name share the first entry — the planner keys its stock by
+        /// that name too. The inventory is reduced to the pure stack view at most once, and only if
+        /// there is a requirement whose identity can be read.
         /// </summary>
         private static IReadOnlyDictionary<string, int> HeldCounts(
             Piece.Requirement[] requirements, Inventory inventory)
@@ -149,8 +150,7 @@ namespace CraftFromDrawersAndChests.Pull
                 if (stacks == null)
                     stacks = InventoryStacks(inventory);
 
-                held[prefab] = DrawerTake.MatchingAmount(
-                    data.m_shared.m_name, data.m_quality, data.m_worldLevel, stacks);
+                held[prefab] = DrawerTake.HeldAmount(data.m_shared.m_name, stacks);
             }
             return held;
         }
@@ -160,7 +160,10 @@ namespace CraftFromDrawersAndChests.Pull
         /// not already hold. <paramref name="held"/> maps a prefab name to how many the player
         /// currently carries; a requirement whose shortfall is zero produces no request, so the
         /// player's own materials are consumed first and storage is asked only for the remainder.
-        /// Pass null to request the full requirement (the "pull the whole recipe" case).
+        /// A null <paramref name="held"/> simply reads as "carries none", which requests every
+        /// requirement in full; production callers always supply the shortfall count
+        /// (<see cref="BuildShortfallRequests"/>), so there is no longer a "pull the whole recipe"
+        /// path.
         /// </summary>
         /// <param name="requirements">The recipe's or piece's requirements; may be null.</param>
         /// <param name="qualityLevel">The quality the requirement is evaluated at (0 or 1 for building).</param>
@@ -434,10 +437,11 @@ namespace CraftFromDrawersAndChests.Pull
         /// <summary>
         /// An inventory's stacks as the pure view the merge predicate matches on, read exactly the way
         /// <c>Storage.DrawerSource</c> reads them: shared name, quality, world level, current size and
-        /// stack size. Used for both halves of the availability question — as a delivery's destination
-        /// (<see cref="DestinationAllows"/>) and as the player's own stock that reduces a request
-        /// (<see cref="HeldCounts"/>) — so both match on the same three-part identity. Read-only: the
-        /// inventory is never written here.
+        /// stack size. Used by both halves of the availability question — as a delivery's destination
+        /// (<see cref="DestinationAllows"/>, which matches on the strict three-part identity) and as the
+        /// player's own stock that reduces a request (<see cref="HeldCounts"/>, which matches on the
+        /// shared name alone) — so the two halves see one stack view even though they apply different
+        /// identities to it. Read-only: the inventory is never written here.
         /// </summary>
         private static List<DrawerTake.InventoryStack> InventoryStacks(Inventory inventory)
         {
@@ -493,8 +497,14 @@ namespace CraftFromDrawersAndChests.Pull
 
         /// <summary>
         /// How many of a prefab the inventory holds, counted by <c>item.m_dropPrefab.name</c> — the
-        /// same prefab keying <see cref="IStorageSource.Count"/> uses (Ruling 1). A stack whose drop
-        /// prefab is unavailable (materialised directly into the inventory) is not counted.
+        /// same prefab keying <see cref="IStorageSource.Count"/> uses (Ruling 1). Quality and world
+        /// level are ignored, which is the <b>one held notion</b> in this project: the same rule as the
+        /// shortfall's <see cref="HeldCounts"/> (which counts by shared name) and the same rule that
+        /// makes a held count a superset of what vanilla consumes. It answers the two questions that
+        /// are genuinely about the prefab — <c>HasAnyOfEach</c>'s "has any of this material" and the
+        /// crafting readout's available amount — and is deliberately <b>not</b> a shortfall count, which
+        /// <see cref="BuildShortfallRequests"/> owns. A stack whose drop prefab is unavailable
+        /// (materialised directly into the inventory) is not counted.
         /// </summary>
         public static int CountHeld(Inventory inventory, string prefabName)
         {

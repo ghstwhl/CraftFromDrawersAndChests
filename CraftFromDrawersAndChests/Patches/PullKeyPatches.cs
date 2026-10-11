@@ -346,18 +346,22 @@ namespace CraftFromDrawersAndChests.Patches
         /// The field is private, so it is reached by reflection exactly as CraftFromContainers reaches
         /// it (CFC line 1115). Reading it here rather than declaring it in the patch signature keeps
         /// this patch independent of the nested <c>Player.PlacementStatus</c> enum's accessibility —
-        /// only the numeric value is compared. The value-to-number step (including the -1 sentinel for
-        /// a missing or unreadable field) is the pure <see cref="BuildPullRules.PlacementStatusOf"/>,
-        /// which has its own test; a missing field (a later game version) reads as -1, which
+        /// only the numeric value is compared. The field resolution and the value-to-number step are
+        /// both the pure <see cref="BuildPullRules.PlacementStatusFrom"/>, which has its own test for
+        /// the renamed-field case; a missing field (a later game version) reads as -1, which
         /// <see cref="BuildPullRules.IsPlacementValid"/> treats as not valid, so an unknown layout fails
         /// closed: the press is swallowed with nothing pulled and nothing placed.
         /// </summary>
         private static int PlacementStatus(Player player)
         {
-            if (player == null || PlacementStatusField == null)
+            if (player == null)
                 return -1;
 
-            return BuildPullRules.PlacementStatusOf(PlacementStatusField.GetValue(player));
+            // A null field means a later game version renamed it: PlacementStatusFrom reads that as the
+            // -1 sentinel (fail closed), the same way it reads an unreadable value.
+            return BuildPullRules.PlacementStatusFrom(
+                PlacementStatusField != null,
+                PlacementStatusField != null ? PlacementStatusField.GetValue(player) : null);
         }
 
         /// <summary>Whether the configured prevent key is held; an unbound key reads as not held.</summary>

@@ -229,7 +229,7 @@ namespace CraftFromDrawersAndChests.Patches
             // The gate and the pull are planned by the same call, so the shortfall storage is asked for
             // to answer "can this be paid for?" is exactly the shortfall the pull will later ask for —
             // a yes here can never promise more than the pull can deliver. See PullEngine.PlanFor for
-            // the three-part item identity the held counts match on.
+            // the held identity the shortfall counts match on (shared name, quality ignored).
             plan = PullEngine.PlanFor(resources, qualityLevel, multiplier, player, PluginConfig.Flags, out sources);
         }
 
