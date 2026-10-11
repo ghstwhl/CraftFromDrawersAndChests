@@ -70,6 +70,10 @@
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>$(ReferencesRoot)\Valheim\$(ValheimGameVersion)\Managed\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
+    <!-- UnityEngine.Input lives here, not in CoreModule: the toggle hotkey reads Input.GetKeyDown. -->
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(ReferencesRoot)\Valheim\$(ValheimGameVersion)\Managed\UnityEngine.InputLegacyModule.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine.PhysicsModule">
       <HintPath>$(ReferencesRoot)\Valheim\$(ValheimGameVersion)\Managed\UnityEngine.PhysicsModule.dll</HintPath>
     </Reference>
@@ -123,12 +127,15 @@
     <Compile Include="Logic\Geometry.cs" />
     <Compile Include="Logic\PullPlan.cs" />
     <Compile Include="Logic\StorageKind.cs" />
+    <Compile Include="Logic\ToggleRules.cs" />
     <Compile Include="Storage\ContainerTrackingPatches.cs" />
     <Compile Include="Storage\DrawerApi.cs" />
     <Compile Include="Storage\DrawerSource.cs" />
     <Compile Include="Storage\IStorageSource.cs" />
     <Compile Include="Storage\StorageRegistry.cs" />
     <Compile Include="Storage\VanillaChestSource.cs" />
+    <Compile Include="Toggle\StorageToggle.cs" />
+    <Compile Include="Toggle\TogglePatches.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
