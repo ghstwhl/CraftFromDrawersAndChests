@@ -87,16 +87,27 @@ namespace CraftFromDrawersAndChests.Storage
         /// Takes up to <paramref name="amount"/> of the given prefab out of the drawer and delivers
         /// them into <paramref name="destination"/>, returning how many were actually delivered.
         /// <para>
-        /// Removal is all-or-nothing per call and uses only the supported path:
-        /// <c>ClaimOwnership()</c> then the <c>ForceRemove</c> RPC. Because <c>ForceRemove</c> only
-        /// removes, the items are then materialised from <paramref name="itemName"/>'s prefab and
-        /// added to <paramref name="destination"/> — the same delivery the chest path performs
-        /// through <c>MultiUserChestBridge.RemoveFromChest(chest, item, destination, ...)</c>.
+        /// Removal uses only the supported path: <c>ClaimOwnership()</c> then the <c>ForceRemove</c>
+        /// RPC. Because <c>ForceRemove</c> only removes, the items are then materialised from
+        /// <paramref name="itemName"/>'s prefab and added to <paramref name="destination"/> — the
+        /// same delivery the chest path performs through
+        /// <c>MultiUserChestBridge.RemoveFromChest(chest, item, destination, ...)</c>.
         /// </para>
         /// <para>
-        /// Nothing is removed unless it can be delivered: with a null destination, an unresolvable
-        /// prefab or no room in the destination, this removes nothing and returns 0 rather than
-        /// destroying the items (the design's top anti-goal).
+        /// Delivery is chunked one stack at a time. A single
+        /// <c>Inventory.AddItem(GameObject, int)</c> places <b>at most one stack</b> (it sets
+        /// <c>m_stack = Mathf.Min(amount, m_maxStackSize)</c> and adds a single <c>ItemData</c>), so
+        /// handing it the whole amount would silently destroy everything beyond the first stack.
+        /// The chunk sizes come from the pure <see cref="DrawerTake.NextChunk"/>, whose loop this
+        /// method drives.
+        /// </para>
+        /// <para>
+        /// Each chunk is capacity-checked (<c>CanAddItem</c>) <b>before</b> that chunk is removed,
+        /// and the amount removed is exactly the amount then added, so the drawer never gives up
+        /// more than the player received: <c>removed == delivered</c> at every step and at the end.
+        /// With a null destination, an unresolvable prefab or no room for even the first chunk this
+        /// removes nothing and returns 0 rather than destroying the items (the design's top
+        /// anti-goal).
         /// </para>
         /// <para>
         /// Never <c>WithdrawItem_Request</c> — it spawns a world drop at the player and clears an
@@ -113,41 +124,57 @@ namespace CraftFromDrawersAndChests.Storage
         /// </param>
         public int Take(string itemName, int amount, Inventory destination)
         {
-            int take = DrawerTake.AmountToRemove(amount, Count(itemName), destination != null);
-            if (take <= 0)
+            int want = DrawerTake.AmountToRemove(amount, Count(itemName), destination != null);
+            if (want <= 0)
                 return 0;
 
             // Resolve and capacity-check before removing anything: if the items cannot be delivered,
             // removing them would destroy them.
             GameObject prefab = ObjectDB.instance != null ? ObjectDB.instance.GetItemPrefab(itemName) : null;
-            if (prefab == null)
+            ItemDrop itemDrop = prefab != null ? prefab.GetComponent<ItemDrop>() : null;
+            ItemDrop.ItemData itemData = itemDrop != null ? itemDrop.m_itemData : null;
+            int maxStack = itemData != null && itemData.m_shared != null
+                ? itemData.m_shared.m_maxStackSize
+                : 0;
+
+            if (prefab == null || maxStack <= 0)
             {
                 Log.LogWarning("Drawer '" + ObjectName + "' reports prefab '" + itemName +
-                               "' that has no ItemDrop; taking nothing.");
+                               "' that has no usable ItemDrop; taking nothing.");
                 return 0;
             }
 
-            if (!destination.CanAddItem(prefab, take))
+            // Deliver one stack at a time. AddItem(GameObject, int) places at most m_maxStackSize
+            // items, so each chunk is at most one stack; a single call for the whole amount would
+            // lose everything beyond the first stack. Each chunk's removal is gated on its own
+            // capacity check, so removed == delivered at every step.
+            int delivered = 0;
+            int chunk;
+            while ((chunk = DrawerTake.NextChunk(want, delivered, maxStack)) > 0)
             {
-                Log.LogWarning("No room in the destination inventory for " + take + "x '" + itemName +
-                               "'; taking nothing from the drawer.");
-                return 0;
+                if (!destination.CanAddItem(prefab, chunk))
+                {
+                    Log.LogWarning("No room in the destination inventory for the next " + chunk +
+                                   "x '" + itemName + "'; delivered " + delivered + " of " + want + ".");
+                    break;
+                }
+
+                _handle.View.ClaimOwnership();
+                _handle.View.InvokeRPC(DrawerApi.ForceRemoveRpcName, chunk);
+
+                // CanAddItem(prefab, chunk) is true and chunk <= maxStack, so this places exactly
+                // chunk; the return is still checked so an API surprise is never swallowed.
+                if (!destination.AddItem(prefab, chunk))
+                {
+                    Log.LogError("A drawer gave up " + chunk + "x '" + itemName +
+                                 "' but the destination refused them.");
+                    break;
+                }
+
+                delivered += chunk;
             }
 
-            _handle.View.ClaimOwnership();
-            _handle.View.InvokeRPC(DrawerApi.ForceRemoveRpcName, take);
-
-            // AddItem(GameObject, int) clones the prefab's ItemData, sets its stack and adds it
-            // stack-aware; the capacity check above makes this succeed for the full amount.
-            if (!destination.AddItem(prefab, take))
-            {
-                // Unreachable after the capacity check, but never silently swallowed.
-                Log.LogError("A drawer gave up " + take + "x '" + itemName +
-                             "' but the destination refused them.");
-                return 0;
-            }
-
-            return take;
+            return delivered;
         }
     }
 }
