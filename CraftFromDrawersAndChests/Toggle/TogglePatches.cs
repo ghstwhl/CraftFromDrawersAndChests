@@ -8,8 +8,12 @@ namespace CraftFromDrawersAndChests.Toggle
 {
     /// <summary>
     /// The game-facing half of the per-storage switch: the hotkey that flips it and the hover line that
-    /// shows it. Three patches hang off this class, all attributed, so <c>Plugin.Awake</c>'s
-    /// assembly-wide <c>Harmony.PatchAll()</c> registers them with no extra call.
+    /// shows it. Two patches hang off this class, and <c>Plugin.Awake</c>'s assembly-wide
+    /// <c>Harmony.PatchAll()</c> registers them with no extra call - but only because of the class-level
+    /// <c>[HarmonyPatch]</c> below. HarmonyX treats a type as a patch class only when the type itself is
+    /// annotated; a class carrying <c>[HarmonyPatch]</c> on its methods alone is skipped silently, which
+    /// is exactly what happened here and left the whole per-storage switch inert while the drawer half
+    /// below (its own class, already annotated) kept working.
     /// <para>
     /// <b>Where a hover text comes from.</b> The game's crosshair reads the hover text through the
     /// <c>Hoverable</c> interface: <c>Hud.UpdateCrosshair</c> calls
@@ -24,6 +28,10 @@ namespace CraftFromDrawersAndChests.Toggle
     /// soft dependency with no compile-time type here.
     /// </para>
     /// </summary>
+    // A class-level [HarmonyPatch] is REQUIRED here - see the note on CraftPatches. Without it both
+    // targets below are silently skipped: no chest ever shows its switch state and the hotkey never
+    // fires, while the drawer half (a separate, already-annotated class) keeps working.
+    [HarmonyPatch]
     internal static class TogglePatches
     {
         /// <summary>

@@ -4,6 +4,19 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-10-12
+
+### Fixed
+
+- **The per-storage switch still did nothing on chests.** `TogglePatches` carried its two targets
+  (`Container.GetHoverText` for the hover suffix and `Player.Update` for the hotkey) on its methods
+  only, so it was skipped for the same reason as the four classes fixed in 0.1.3 — the class-level
+  `[HarmonyPatch]` in that file sat on `DrawerHoverTextPatch`, the drawer half, not on `TogglePatches`.
+  Drawers therefore showed their switch state while chests did not, and the hotkey never fired. The
+  class now carries a bare `[HarmonyPatch]` too; no code moved.
+- The start-up patch report made this visible: 0.1.3 listed 19 patched methods, and the only two
+  declared sites absent from that list were exactly these.
+
 ## [0.1.3] - 2026-10-12
 
 ### Fixed
