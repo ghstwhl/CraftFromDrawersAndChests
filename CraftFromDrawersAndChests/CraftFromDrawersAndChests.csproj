@@ -123,4 +123,49 @@
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- .NET Framework 4.6.2 reference assemblies from NuGet, so no machine-wide targeting pack is required. -->
   <Import Project="..\packages\Microsoft.NETFramework.ReferenceAssemblies.net462.1.0.3\build\Microsoft.NETFramework.ReferenceAssemblies.net462.targets" Condition="Exists('..\packages\Microsoft.NETFramework.ReferenceAssemblies.net462.1.0.3\build\Microsoft.NETFramework.ReferenceAssemblies.net462.targets')" />
+  <!--
+    Packaging staging, ported from the author's XPortalNetworks mod.
+
+    tools/Build.ps1 supplies these properties with /p: for the Release build:
+      PackageFolder    = <ThunderstoreTeam>-<ThunderstorePackage>  (read from ModInfo.cs)
+      ReleaseRoot      = <repo>\Release
+      ModRoot          = a temp root whose \CraftFromDrawersAndChests subfolder holds the staged docs
+      DevPluginsFolder = a path that does not exist, so the CopyToDev target stays inert
+    The defaults below are repo-relative and only apply to a bare MSBuild/VS build.
+  -->
+  <PropertyGroup>
+    <ReleaseRoot Condition="'$(ReleaseRoot)' == ''">$(MSBuildProjectDirectory)\..\Release</ReleaseRoot>
+    <ModRoot Condition="'$(ModRoot)' == ''">$(MSBuildProjectDirectory)\..</ModRoot>
+    <!-- Deliberately not the reference repo's "<AssemblyName>-Vapok": the Thunderstore folder is
+         "<Team>-<Package>", which tools/Build.ps1 passes from ModInfo.cs. -->
+    <PackageFolder Condition="'$(PackageFolder)' == ''">$(AssemblyName)</PackageFolder>
+    <DevPluginsFolder Condition="'$(DevPluginsFolder)' == ''">/tmp/craftfromdrawersandchests-devplugins</DevPluginsFolder>
+  </PropertyGroup>
+
+  <!-- Developer convenience deploy: active only when DevPluginsFolder actually exists.
+       tools/Build.ps1 points it at a non-existent sentinel, so this no-ops in the normal build. -->
+  <Target Name="CopyToDev" AfterTargets="Build" Condition="('$(Configuration)' == 'Debug' or '$(Configuration)' == 'Local' or '$(Configuration)' == 'Release') and Exists('$(DevPluginsFolder)')">
+    <ItemGroup>
+      <DevTranslationFiles Include="$(MSBuildProjectDirectory)\Translations\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(DevPluginsFolder)\$(PackageFolder)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(DevTranslationFiles)" DestinationFiles="@(DevTranslationFiles->'$(DevPluginsFolder)\$(PackageFolder)\Translations\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- Release: assemble the Thunderstore package under
+       $(ReleaseRoot)\$(PackageFolder)\ -> plugins\<AssemblyName>.dll (+ Translations\) and the staged
+       root docs (LICENSE.md, manifest.json, CHANGELOG.md, README.md, icon.png). -->
+  <Target Name="Copy" AfterTargets="Build" Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <ItemGroup>
+      <TranslationFiles Include="$(MSBuildProjectDirectory)\Translations\**\*.*" />
+      <PackageDocs Include="$(ModRoot)\$(ProjectName)\LICENSE.md"   Condition="Exists('$(ModRoot)\$(ProjectName)\LICENSE.md')" />
+      <PackageDocs Include="$(ModRoot)\$(ProjectName)\manifest.json" Condition="Exists('$(ModRoot)\$(ProjectName)\manifest.json')" />
+      <PackageDocs Include="$(ModRoot)\$(ProjectName)\CHANGELOG.md"  Condition="Exists('$(ModRoot)\$(ProjectName)\CHANGELOG.md')" />
+      <PackageDocs Include="$(ModRoot)\$(ProjectName)\README.md"    Condition="Exists('$(ModRoot)\$(ProjectName)\README.md')" />
+      <PackageDocs Include="$(ModRoot)\$(ProjectName)\icon.png"     Condition="Exists('$(ModRoot)\$(ProjectName)\icon.png')" />
+    </ItemGroup>
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ReleaseRoot)\$(PackageFolder)\plugins" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(TranslationFiles)" DestinationFiles="@(TranslationFiles->'$(ReleaseRoot)\$(PackageFolder)\plugins\Translations\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(PackageDocs)" DestinationFolder="$(ReleaseRoot)\$(PackageFolder)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>
