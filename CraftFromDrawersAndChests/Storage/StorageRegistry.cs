@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using CraftFromDrawersAndChests.Logic;
-using UnityEngine;
 
 namespace CraftFromDrawersAndChests.Storage
 {
@@ -10,12 +9,12 @@ namespace CraftFromDrawersAndChests.Storage
     /// the pure <c>Logic/</c> layer never sees this type.
     /// <para>
     /// The flow is CraftFromContainers 4.0.7's <c>GetNearbyContainers</c>: the raw containers are
-    /// filtered by distance, chest-type settings, access, a non-null inventory and the guard stone.
-    /// Five of those live in <see cref="Eligibility"/> — distance, the chest-type rules, access, the
-    /// inventory and the per-storage switch. The two container-only checks that
-    /// <see cref="StorageCandidate"/> deliberately carries no fields for — the container sits inside
-    /// a <c>Piece</c>, and the guard stone grants access at its position — are applied here through
-    /// <see cref="VanillaChestSource"/>'s helpers, since Task 3's candidate shape is frozen.
+    /// filtered by distance, chest-type settings, access, a non-null inventory, membership of a
+    /// built <c>Piece</c> and the guard stone. Every one of those decisions lives in the pure
+    /// <see cref="Eligibility.IsEligible"/> predicate; this class only observes each container's
+    /// game state into a <see cref="StorageCandidate"/> and passes it <c>in</c>. The two
+    /// container-only clauses are fed from <see cref="VanillaChestSource.IsInsidePiece"/> and
+    /// <see cref="VanillaChestSource.PassesGuardStone"/>.
     /// </para>
     /// <para>
     /// CraftFromContainers also skipped a container another player had open. That exclusion is
@@ -39,7 +38,7 @@ namespace CraftFromDrawersAndChests.Storage
             if (flags == null)
                 return sources;
 
-            ChestTypeRules chestRules = BuildChestRules(flags);
+            ChestTypeRules chestRules = ChestTypeRules.FromFlags(flags);
             CollectChests(origin, flags, chestRules, sources);
             CollectDrawers(origin, flags, chestRules, sources);
             return sources;
@@ -69,11 +68,7 @@ namespace CraftFromDrawersAndChests.Storage
                     continue;
 
                 var source = new VanillaChestSource(container);
-
-                // The two container-only filters Eligibility cannot see (it has no candidate fields
-                // for them): a loose container is not part of a built Piece, and a guard-stone
-                // container is skipped where PrivateArea denies access.
-                if (!source.IsValid || !source.IsInsidePiece || !source.PassesGuardStone)
+                if (!source.IsValid)
                     continue;
 
                 var candidate = new StorageCandidate(
@@ -84,7 +79,9 @@ namespace CraftFromDrawersAndChests.Storage
                     source.ParentIsWagon,
                     source.ToggledOff,
                     source.HasAccess,
-                    source.HasInventory);
+                    source.HasInventory,
+                    source.IsInsidePiece,
+                    source.PassesGuardStone);
 
                 if (Eligibility.IsEligible(
                         candidate, origin, flags.MaxRange, flags.EnableChests, flags.EnableDrawers, chestRules))
@@ -104,8 +101,9 @@ namespace CraftFromDrawersAndChests.Storage
                 if (!source.IsValid)
                     continue;
 
-                // A drawer is a ZNetView, not a Container: it has no chest type, access check or
-                // Container inventory, and Eligibility ignores those fields for a drawer anyway.
+                // A drawer is a ZNetView, not a Container: it has no chest type, Piece parent,
+                // guard stone, access check or Container inventory, and Eligibility ignores those
+                // fields for a drawer anyway.
                 var candidate = new StorageCandidate(
                     StorageKind.Drawer,
                     source.Position,
@@ -114,7 +112,9 @@ namespace CraftFromDrawersAndChests.Storage
                     false, // parentIsWagon
                     source.ToggledOff,
                     false, // hasAccess
-                    false); // hasInventory
+                    false, // hasInventory
+                    false, // isInsidePiece: a drawer is not a Piece child
+                    false); // passesGuardStone: a drawer has no guard stone
 
                 if (Eligibility.IsEligible(
                         candidate, origin, flags.MaxRange, flags.EnableChests, flags.EnableDrawers, chestRules))
@@ -122,23 +122,6 @@ namespace CraftFromDrawersAndChests.Storage
                     sources.Add(source);
                 }
             }
-        }
-
-        /// <summary>
-        /// Builds the chest-type rules from the six ignore settings, so the pure predicate never has
-        /// to know about <see cref="FeatureFlags"/>.
-        /// </summary>
-        private static ChestTypeRules BuildChestRules(FeatureFlags flags)
-        {
-            return new ChestTypeRules
-            {
-                IgnoreShipContainers = flags.IgnoreShipContainers,
-                IgnoreWagonContainers = flags.IgnoreWagonContainers,
-                IgnoreWoodChests = flags.IgnoreWoodChests,
-                IgnorePrivateChests = flags.IgnorePrivateChests,
-                IgnoreBlackMetalChests = flags.IgnoreBlackMetalChests,
-                IgnoreReinforcedChests = flags.IgnoreReinforcedChests,
-            };
         }
     }
 }

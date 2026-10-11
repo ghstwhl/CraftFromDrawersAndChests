@@ -103,5 +103,40 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             var r = new ChestTypeRules();
             Assert.That(r.IsExcluded("piece_chest(Clone)", false, true), Is.False);
         }
+
+        /// <summary>
+        /// <see cref="ChestTypeRules.FromFlags"/> must map each of the six <c>FeatureFlags</c> ignore
+        /// settings to its own field. Each case sets exactly one flag and asserts all six fields, so a
+        /// dropped field, a swapped source flag or a copy-paste duplicate fails the case for the two
+        /// flags involved rather than silently disabling a chest-type rule.
+        /// </summary>
+        [TestCase("ship")]
+        [TestCase("wagon")]
+        [TestCase("wood")]
+        [TestCase("private")]
+        [TestCase("blackmetal")]
+        [TestCase("reinforced")]
+        public void FromFlags_MapsEachIgnoreFlagToItsField(string enabled)
+        {
+            var flags = new FeatureFlags();
+            switch (enabled)
+            {
+                case "ship": flags.IgnoreShipContainers = true; break;
+                case "wagon": flags.IgnoreWagonContainers = true; break;
+                case "wood": flags.IgnoreWoodChests = true; break;
+                case "private": flags.IgnorePrivateChests = true; break;
+                case "blackmetal": flags.IgnoreBlackMetalChests = true; break;
+                case "reinforced": flags.IgnoreReinforcedChests = true; break;
+            }
+
+            ChestTypeRules r = ChestTypeRules.FromFlags(flags);
+
+            Assert.That(r.IgnoreShipContainers, Is.EqualTo(enabled == "ship"));
+            Assert.That(r.IgnoreWagonContainers, Is.EqualTo(enabled == "wagon"));
+            Assert.That(r.IgnoreWoodChests, Is.EqualTo(enabled == "wood"));
+            Assert.That(r.IgnorePrivateChests, Is.EqualTo(enabled == "private"));
+            Assert.That(r.IgnoreBlackMetalChests, Is.EqualTo(enabled == "blackmetal"));
+            Assert.That(r.IgnoreReinforcedChests, Is.EqualTo(enabled == "reinforced"));
+        }
     }
 }

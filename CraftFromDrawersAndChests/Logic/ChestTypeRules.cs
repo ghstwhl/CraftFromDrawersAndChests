@@ -17,6 +17,26 @@ namespace CraftFromDrawersAndChests.Logic
         public bool IgnoreBlackMetalChests;
         public bool IgnoreReinforcedChests;
 
+        /// <summary>
+        /// Builds the rules from a resolved <see cref="FeatureFlags"/> snapshot — a plain six-field
+        /// copy, so the pure predicate never has to know about <see cref="FeatureFlags"/>. Lives here,
+        /// next to the fields it fills, so a dropped or misnamed field is caught by
+        /// <c>ChestTypeRulesTests.FromFlags_MapsEachIgnoreFlagToItsField</c> instead of silently
+        /// disabling a chest-type rule in the game-facing layer.
+        /// </summary>
+        public static ChestTypeRules FromFlags(FeatureFlags flags)
+        {
+            return new ChestTypeRules
+            {
+                IgnoreShipContainers = flags.IgnoreShipContainers,
+                IgnoreWagonContainers = flags.IgnoreWagonContainers,
+                IgnoreWoodChests = flags.IgnoreWoodChests,
+                IgnorePrivateChests = flags.IgnorePrivateChests,
+                IgnoreBlackMetalChests = flags.IgnoreBlackMetalChests,
+                IgnoreReinforcedChests = flags.IgnoreReinforcedChests,
+            };
+        }
+
         // Prefixes copied from CraftFromContainers 4.0.7. They are disjoint: the reinforced
         // prefix ends in '(' where the others have '_', so "piece_chest_wood(Clone)" does not
         // start with "piece_chest(".

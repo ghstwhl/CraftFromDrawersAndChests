@@ -8,7 +8,9 @@ namespace CraftFromDrawersAndChests.Tests.Logic
     {
         private static readonly Vec3 Origin = new Vec3(0f, 0f, 0f);
 
-        /// <summary>A chest that passes every non-range check; tests vary one field at a time.</summary>
+        /// <summary>A chest that passes every non-range check; tests vary one field at a time.
+        /// <c>isInsidePiece</c>/<c>passesGuardStone</c> default true so a chest stays eligible unless
+        /// a test deliberately clears one.</summary>
         private static StorageCandidate Chest(
             Vec3 position,
             string objectName = "piece_chest(Clone)",
@@ -16,24 +18,30 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             bool parentIsWagon = false,
             bool toggledOff = false,
             bool hasAccess = true,
-            bool hasInventory = true)
+            bool hasInventory = true,
+            bool isInsidePiece = true,
+            bool passesGuardStone = true)
         {
             return new StorageCandidate(
                 StorageKind.Chest, position, objectName, parentIsShip, parentIsWagon,
-                toggledOff, hasAccess, hasInventory);
+                toggledOff, hasAccess, hasInventory, isInsidePiece, passesGuardStone);
         }
 
-        /// <summary>A drawer that passes every non-range check; tests vary one field at a time.</summary>
+        /// <summary>A drawer that passes every non-range check; tests vary one field at a time.
+        /// A drawer is never a <c>Piece</c> child and never has a guard stone, so those two fields
+        /// default false and the predicate must ignore them for a drawer.</summary>
         private static StorageCandidate Drawer(
             Vec3 position,
             string objectName = "drawer(Clone)",
             bool toggledOff = false,
             bool hasAccess = true,
-            bool hasInventory = true)
+            bool hasInventory = true,
+            bool isInsidePiece = false,
+            bool passesGuardStone = false)
         {
             return new StorageCandidate(
                 StorageKind.Drawer, position, objectName, false, false,
-                toggledOff, hasAccess, hasInventory);
+                toggledOff, hasAccess, hasInventory, isInsidePiece, passesGuardStone);
         }
 
         [Test]
@@ -80,6 +88,37 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             Assert.That(
                 Eligibility.IsEligible(c, Origin, 10f, chestsEnabled: true, drawersEnabled: true, new ChestTypeRules()),
                 Is.False);
+        }
+
+        [Test]
+        public void ChestOutsidePiece_IsNotEligible()
+        {
+            // A loose container is not part of a built Piece and is never a pull source.
+            var c = Chest(new Vec3(1f, 0f, 0f), isInsidePiece: false);
+            Assert.That(
+                Eligibility.IsEligible(c, Origin, 10f, chestsEnabled: true, drawersEnabled: true, new ChestTypeRules()),
+                Is.False);
+        }
+
+        [Test]
+        public void ChestDeniedByGuardStone_IsNotEligible()
+        {
+            // A guard-stone container is only a source where PrivateArea grants access.
+            var c = Chest(new Vec3(1f, 0f, 0f), passesGuardStone: false);
+            Assert.That(
+                Eligibility.IsEligible(c, Origin, 10f, chestsEnabled: true, drawersEnabled: true, new ChestTypeRules()),
+                Is.False);
+        }
+
+        [Test]
+        public void DrawerIsUnaffectedByPieceOrGuardStone()
+        {
+            // A drawer has no Piece requirement and no guard stone: both clauses are scoped to a
+            // chest, so a drawer with both fields false is still eligible.
+            var d = Drawer(new Vec3(1f, 0f, 0f), isInsidePiece: false, passesGuardStone: false);
+            Assert.That(
+                Eligibility.IsEligible(d, Origin, 10f, chestsEnabled: true, drawersEnabled: true, new ChestTypeRules()),
+                Is.True);
         }
 
         [Test]
