@@ -119,7 +119,8 @@ server and the client, using the same build on each side.
 
 ## Task 14 — ctrl-click pull, messages and flash
 
-- [ ] Set `Pull items key` first (like the toggle key, it ships **empty**) — until then the feature is inert.
+- [ ] **Set `Maximum range` before you start.** It defaults to **4**, where CraftFromContainers' `ContainerRange` defaults to **10** (CFC 4.0.7 line 93) — a 2.5× tighter default, so raise it to 10 to compare like-for-like. **Never set it to 0:** CFC treats 0 as *unlimited* (CFC 173), ours treats 0 as *nothing in range* — a known parity gap, tracked as Task 15e.
+- [ ] **`Pull items key` ships as `left ctrl`** (verified in `PluginConfig.cs:132`), so ctrl-click pull works out of the box. **`Toggle storage key` ships empty** (`:134`), so the per-storage switch does nothing until you set it.
 - [ ] Ctrl-click a recipe whose materials are in a chest and a drawer. Expected: the recipe is **not** built, the
       ingredients land in your inventory, and the pulled message shows.
 - [ ] **Readout flash.** With the panel open on a recipe the inventory cannot cover but storage can, the
