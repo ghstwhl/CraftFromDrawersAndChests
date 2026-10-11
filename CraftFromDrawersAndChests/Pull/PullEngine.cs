@@ -209,7 +209,8 @@ namespace CraftFromDrawersAndChests.Pull
         /// requirement gates use, so a pull can only demand what a "yes" already promised it could
         /// deliver. The collected sources are returned so the caller can hand the very same list to
         /// <see cref="Execute"/> and have its plan lines resolve. The upgrader flag is derived from the
-        /// player's current crafting station.
+        /// player's current crafting station. Delegates to the <see cref="Inventory"/> overload, which
+        /// is the same plan with the destination and origin named explicitly.
         /// </summary>
         /// <param name="requirements">The recipe's or piece's requirements; may be null.</param>
         /// <param name="qualityLevel">The quality the requirement is evaluated at (0 or 1 for building).</param>
@@ -221,11 +222,42 @@ namespace CraftFromDrawersAndChests.Pull
             Piece.Requirement[] requirements, int qualityLevel, int multiplier,
             Player player, FeatureFlags flags, out IReadOnlyList<IStorageSource> sources)
         {
-            Vec3 origin = OriginOf(player);
+            return PlanFor(
+                requirements, qualityLevel, multiplier,
+                player != null ? player.GetInventory() : null, OriginOf(player), flags, AtUpgrader(player),
+                out sources);
+        }
+
+        /// <summary>
+        /// The <see cref="Inventory"/>-taking form of the player-bound <see cref="PlanFor"/> overload:
+        /// the same shortfall plan, with the destination inventory and the origin that range is
+        /// measured from named explicitly instead of being derived from a player. A station feeding
+        /// pass uses it — origin at the station's own transform, so the storage the station can draw
+        /// on is the storage within range of the station, exactly as CraftFromContainers measures it
+        /// (CFC 4.0.7's station patches call <c>GetNearbyContainers(__instance.transform.position)</c>).
+        /// <para>
+        /// <paramref name="allowUpgraderResources"/> is passed straight through to
+        /// <see cref="Plan"/>. A station passes false: an upgrader resource (an Idol) is only ever
+        /// consumed at a crafting station, so a fireplace, smelter, cooking station or turret must
+        /// never draw one.
+        /// </para>
+        /// </summary>
+        /// <param name="requirements">The recipe's or piece's requirements; may be null.</param>
+        /// <param name="qualityLevel">The quality the requirement is evaluated at (0 or 1 for building).</param>
+        /// <param name="multiplier">How many of the recipe are being made (1 for building).</param>
+        /// <param name="inventory">The inventory whose held materials reduce the request — the same inventory the pull will deliver into; may be null, which reads as "holds none".</param>
+        /// <param name="origin">The world position storage is measured from.</param>
+        /// <param name="flags">The resolved configuration snapshot.</param>
+        /// <param name="allowUpgraderResources">Whether an upgrader resource requirement may be planned at all.</param>
+        /// <param name="sources">The eligible storage the plan was built against, for <see cref="Execute"/>.</param>
+        public static PullPlanResult PlanFor(
+            Piece.Requirement[] requirements, int qualityLevel, int multiplier,
+            Inventory inventory, Vec3 origin, FeatureFlags flags, bool allowUpgraderResources,
+            out IReadOnlyList<IStorageSource> sources)
+        {
             sources = Collect(origin, flags);
-            Inventory inventory = player != null ? player.GetInventory() : null;
             PullRequest[] requests = BuildShortfallRequests(requirements, qualityLevel, multiplier, inventory);
-            return Plan(requests, sources, origin, flags, AtUpgrader(player));
+            return Plan(requests, sources, origin, flags, allowUpgraderResources);
         }
 
         /// <summary>
@@ -260,17 +292,28 @@ namespace CraftFromDrawersAndChests.Pull
         /// (resolve the line's source, call <see cref="IStorageSource.Take"/>) and the logger. See
         /// <see cref="PullRunner.Run"/> for how each shape is handled, in particular that
         /// <see cref="ChestTake.Deferred"/> counts as <b>satisfied</b> (the items have already left the
-        /// storage) rather than failed.
+        /// storage) rather than failed. Delegates to the <see cref="Inventory"/> overload with the
+        /// player's own inventory as the destination.
         /// </para>
         /// </summary>
         public static bool Execute(PullPlanResult plan, IReadOnlyList<IStorageSource> sources, Player player)
+        {
+            return Execute(plan, sources, player != null ? player.GetInventory() : null);
+        }
+
+        /// <summary>
+        /// The <see cref="Inventory"/>-taking form of the player-bound <see cref="Execute"/> overload:
+        /// executes every line of a feasible plan into any inventory, not only a player's. The
+        /// destination is what <see cref="IStorageSource.Take"/> delivers into, so the sequencing is
+        /// unchanged — only the last step's destination differs.
+        /// </summary>
+        public static bool Execute(PullPlanResult plan, IReadOnlyList<IStorageSource> sources, Inventory destination)
         {
             // An infeasible plan secured nothing by definition, and Lines is empty for one; report
             // failure rather than the vacuous success an empty walk would give.
             if (plan == null || !plan.Feasible)
                 return false;
 
-            Inventory destination = player != null ? player.GetInventory() : null;
             if (destination == null)
                 return false;
 
@@ -325,17 +368,54 @@ namespace CraftFromDrawersAndChests.Pull
             Piece.Requirement[] requirements, int qualityLevel, int multiplier, Player player, FeatureFlags flags,
             out bool requested)
         {
+            return PullToInventory(
+                requirements, qualityLevel, multiplier,
+                player != null ? player.GetInventory() : null, OriginOf(player), flags, AtUpgrader(player),
+                out requested);
+        }
+
+        /// <summary>
+        /// The <see cref="Inventory"/>-taking form of <see cref="PullToPlayer"/>: pulls the shortfall of
+        /// <paramref name="requirements"/> into any inventory, from storage within range of
+        /// <paramref name="origin"/>. Station feeding uses it — the origin is the station's transform,
+        /// the destination is the inventory the station is then fed from — and the player-facing
+        /// ctrl-click and building pulls keep their own names and behaviour by delegating here.
+        /// <para>
+        /// All of <see cref="PullToPlayer"/>'s rules apply unchanged, because this <i>is</i> the
+        /// implementation it delegates to: storage is asked only for the shortfall below what the
+        /// destination already holds, the plan is proved whole before anything moves, and the
+        /// destination must be able to accept every line before the first item is taken — so nothing
+        /// can be pulled that cannot be delivered, and nothing can reach the ground. A no-op pull
+        /// (nothing to fetch) returns true with <paramref name="requested"/> false, so the caller
+        /// reports neither a success nor a failure.
+        /// </para>
+        /// </summary>
+        /// <param name="requirements">The recipe's or piece's requirements; may be null, which has nothing to fetch.</param>
+        /// <param name="qualityLevel">The quality the requirement is evaluated at (0 or 1 for building).</param>
+        /// <param name="multiplier">How many are being pulled (1 unless multicrafting).</param>
+        /// <param name="destination">Where the pulled items are delivered, and whose held stock reduces the request; null refuses.</param>
+        /// <param name="origin">The world position the eligible storage is measured from.</param>
+        /// <param name="flags">The resolved configuration snapshot; null refuses.</param>
+        /// <param name="allowUpgraderResources">Whether an upgrader resource requirement may be planned at all.</param>
+        /// <param name="requested">Whether the pull had anything to fetch; false means a no-op pull.</param>
+        public static bool PullToInventory(
+            Piece.Requirement[] requirements, int qualityLevel, int multiplier,
+            Inventory destination, Vec3 origin, FeatureFlags flags, bool allowUpgraderResources,
+            out bool requested)
+        {
             requested = false;
-            if (player == null || flags == null)
+            if (destination == null || flags == null)
                 return false;
 
             // PlanFor is the single planning entry point: it collects the eligible sources once and
-            // asks storage only for the shortfall below what the player carries.
+            // asks storage only for the shortfall below what the destination carries.
             PullPlanResult plan = PlanFor(
-                requirements, qualityLevel, multiplier, player, flags, out IReadOnlyList<IStorageSource> sources);
+                requirements, qualityLevel, multiplier, destination, origin, flags, allowUpgraderResources,
+                out IReadOnlyList<IStorageSource> sources);
 
-            // Nothing to fetch: no requirements at all, or the player already holds every one of them.
-            // The pull is a no-op, so report nothing rather than a misleading success or room failure.
+            // Nothing to fetch: no requirements at all, or the destination already holds every one of
+            // them. The pull is a no-op, so report nothing rather than a misleading success or room
+            // failure.
             if (plan.Feasible && plan.Lines.Count == 0)
                 return true;
 
@@ -345,10 +425,10 @@ namespace CraftFromDrawersAndChests.Pull
                 return false;
 
             // No crafted output is reserved here: the pull is the whole action, nothing is crafted.
-            if (!DestinationAllows(player, requirements, plan, null))
+            if (!DestinationAllows(destination, requirements, plan, null))
                 return false;
 
-            return Execute(plan, sources, player);
+            return Execute(plan, sources, destination);
         }
 
         /// <summary>
@@ -376,10 +456,28 @@ namespace CraftFromDrawersAndChests.Pull
             PullPlanResult plan,
             DestinationCapacity.Delivery? reserved)
         {
+            return DestinationAllows(player != null ? player.GetInventory() : null, requirements, plan, reserved);
+        }
+
+        /// <summary>
+        /// The <see cref="Inventory"/>-taking form of the player-bound <see cref="DestinationAllows"/>:
+        /// the same room test against a named inventory rather than a player's. Delegated to by the
+        /// player-facing overload, so the player's inventory and any other destination are judged by
+        /// one implementation and cannot diverge.
+        /// </summary>
+        /// <param name="inventory">The delivery destination; null refuses.</param>
+        /// <param name="requirements">The recipe's or piece's requirements, used to describe each line.</param>
+        /// <param name="plan">The plan whose lines are to be delivered; null refuses.</param>
+        /// <param name="reserved">A delivery to charge ahead of the lines (the crafted output), or null.</param>
+        public static bool DestinationAllows(
+            Inventory inventory,
+            Piece.Requirement[] requirements,
+            PullPlanResult plan,
+            DestinationCapacity.Delivery? reserved)
+        {
             if (plan == null)
                 return false;
 
-            Inventory inventory = player != null ? player.GetInventory() : null;
             if (inventory == null)
                 return false;
 
