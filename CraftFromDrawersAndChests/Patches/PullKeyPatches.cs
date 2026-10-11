@@ -10,20 +10,30 @@ using UnityEngine;
 namespace CraftFromDrawersAndChests.Patches
 {
     /// <summary>
-    /// The ctrl-click pull: holding <c>PullItemsKey</c> while clicking a recipe pulls that recipe's
+    /// The pull key: holding <c>PullItemsKey</c> while clicking a recipe pulls that recipe's
     /// ingredients into the player's inventory instead of crafting it, reports the outcome, and
-    /// flashes the resource readout while storage covers the requirement.
+    /// flashes the resource readout while storage covers the requirement. The same key in placement
+    /// mode pulls the selected <i>building piece's</i> materials instead of placing the piece.
     /// <para>
-    /// Three patch sites. <c>InventoryGui.OnCraftPressed</c> is prefixed: when the pull key is held the
+    /// Four patch sites. <c>InventoryGui.OnCraftPressed</c> is prefixed: when the pull key is held the
     /// craft is never performed — <see cref="PullEngine.PullToPlayer"/> is run instead and the prefix
     /// returns false. This mirrors CraftFromContainers 4.0.7's <c>DoCrafting_Patch</c>, which also
-    /// never lets the intercepted click craft. The second site, a postfix on
-    /// <c>InventoryGui.SetupRequirement</c>, is the readout: the requirement's amount text is
-    /// rewritten from the configured resource string and alternates between
-    /// <see cref="PluginConfig.FlashColor"/> and <see cref="PluginConfig.UnFlashColor"/> while the
-    /// requirement is covered by storage. The third, a prefix on <c>InventoryGui.Update</c>,
-    /// refreshes the crafting panel when the prevent gate flips, so a change in which recipes storage
-    /// makes available is visible at once.
+    /// never lets the intercepted click craft. The second site, a prefix on <c>Player.UpdatePlacement</c>,
+    /// is the build half of the same feature: an attack press while the pull key is held fetches the
+    /// selected piece's materials and never places it, exactly as CraftFromContainers' own
+    /// <c>UpdatePlacement_Patch</c> does. The third, a postfix on <c>InventoryGui.SetupRequirement</c>,
+    /// is the crafting readout: the requirement's amount text is rewritten from the configured
+    /// resource string and alternates between <see cref="PluginConfig.FlashColor"/> and
+    /// <see cref="PluginConfig.UnFlashColor"/> while the requirement is covered by storage. The fourth,
+    /// a prefix on <c>InventoryGui.Update</c>, refreshes the crafting panel when the prevent gate flips,
+    /// so a change in which recipes storage makes available is visible at once.
+    /// </para>
+    /// <para>
+    /// The build half exists because CraftFromContainers' <c>PullItemsKey</c> is documented as
+    /// "holding down this key while crafting <b>or building</b>", and the crafting half alone would
+    /// have silently dropped a retained feature. There is deliberately no build-path readout to mirror:
+    /// CraftFromContainers flashes only <c>InventoryGui.SetupRequirement</c>, which the crafting panel
+    /// owns, and the build HUD shows no per-requirement amounts at all.
     /// </para>
     /// <para>
     /// <b>The prevent gate.</b> Every site here obeys <see cref="AllowByKey"/>, and so do the
@@ -45,6 +55,13 @@ namespace CraftFromDrawersAndChests.Patches
 
         /// <summary>The prevent-gate state the last <c>InventoryGui.Update</c> prefix observed, so a flip can be noticed.</summary>
         private static bool lastAllowed = true;
+
+        /// <summary>
+        /// <c>Player.m_placementStatus</c>, the private placement status the game rewrites each frame.
+        /// Resolved once, like the private <c>Container.CheckAccess</c> method the chest source uses.
+        /// </summary>
+        private static readonly System.Reflection.FieldInfo PlacementStatusField =
+            AccessTools.Field(typeof(Player), "m_placementStatus");
 
         /// <summary>
         /// Turns a recipe click into a pull while the pull key is held. The pull key is a
@@ -93,10 +110,104 @@ namespace CraftFromDrawersAndChests.Patches
             }
             else
             {
-                ShowMessage(player, FailureReason(player, recipe, qualityLevel, multiplier, flags));
+                ShowMessage(player, FailureReason(player, recipe.m_resources, qualityLevel, multiplier, flags));
             }
 
             // Intercepted: the click was a pull, so vanilla must not craft as well.
+            return false;
+        }
+
+        /// <summary>
+        /// Turns an attack press in placement mode into a pull of the selected building piece's
+        /// materials, mirroring CraftFromContainers 4.0.7's <c>UpdatePlacement_Patch</c> (CFC
+        /// <c>BepInExPlugin.cs</c> lines 1096-1125): the same guard line (1102), the same
+        /// attack-or-gamepad-place trigger (1106), the same selected-piece, repair-piece, ghost and
+        /// placement-status branches (1108-1116), and the same pull call with the same arguments
+        /// (1119).
+        /// <para>
+        /// <b>The press never places the piece.</b> Whether the pull runs or is refused the prefix
+        /// returns false, exactly as CFC's does, so a click that was meant to fetch materials cannot
+        /// also place the piece — and a placement can therefore never be paid for with nothing. The
+        /// pull itself is <see cref="PullEngine.PullToPlayer"/>, the very entry point the ctrl-click
+        /// pull uses: it plans whole, proves the destination can take every line, and refuses having
+        /// moved nothing when it cannot, so no item can reach the ground.
+        /// </para>
+        /// <para>
+        /// <b>The placement gate already knows about storage.</b> The status this prefix reads is the
+        /// answer <c>Player.HaveRequirements(piece, CanBuild)</c> gave inside the same method, and
+        /// <c>Patches.CraftPatches</c> already postfixes that check to count chests and drawers — the
+        /// same storage-aware gate CraftFromContainers installs for its own placement status. The guard
+        /// is read, never weakened, and this prefix runs <i>before</i> the method body that would call
+        /// <c>TryPlacePiece</c>, so the gate's storage answer and the placement can never disagree.
+        /// </para>
+        /// <para>
+        /// <b>The prevent gate.</b> <see cref="BuildPullRules.ShouldIntercept"/> carries
+        /// <see cref="PullKeyRules.ShouldPull"/>, the same prevent-key decision every other pull site
+        /// obeys, so holding the prevent key leaves the press to vanilla here too.
+        /// </para>
+        /// <para>
+        /// <b>Feedback.</b> On success the configured <c>PulledMessage</c> shows. On a refusal during
+        /// the pull the reason is named: the missing items, de-duplicated, exactly as the recipe pull
+        /// reports them. CraftFromContainers shows the success message on the build path too but no
+        /// reason for a refusal, and prints its success message once per requirement (its call sits
+        /// inside the requirement loop, CFC line 1261); this mod prints it once.
+        /// </para>
+        /// </summary>
+        [HarmonyPatch(typeof(Player), "UpdatePlacement")]
+        [HarmonyPrefix]
+        private static bool UpdatePlacementPrefix(
+            Player __instance,
+            bool takeInput,
+            PieceTable ___m_buildPieces,
+            GameObject ___m_placementGhost)
+        {
+            FeatureFlags flags = PluginConfig.Flags;
+            if (flags == null || __instance == null || !object.ReferenceEquals(__instance, Player.m_localPlayer))
+                return true;
+
+            // CraftFromContainers' one guard line (1102): the mod is on, the prevent gate allows, the
+            // pull key is held, the player is placing, input is live, and the piece picker is closed.
+            if (!BuildPullRules.ShouldIntercept(
+                    flags.ModEnabled,
+                    KeyHeld(flags.PullItemsKey),
+                    PreventKeyHeld(flags),
+                    flags.SwitchPrevent,
+                    __instance.InPlaceMode(),
+                    takeInput,
+                    Hud.IsPieceSelectionVisible()))
+                return true;
+
+            // The trigger — an attack press, or the gamepad place button (CFC 1106).
+            if (!ZInput.GetButtonDown("Attack") && !ZInput.GetButtonDown("JoyPlace"))
+                return true;
+
+            Piece selectedPiece = ___m_buildPieces != null ? ___m_buildPieces.GetSelectedPiece() : null;
+            BuildPullDecision decision = BuildPullRules.Decide(
+                selectedPiece != null,
+                selectedPiece != null && selectedPiece.m_repairPiece,
+                ___m_placementGhost != null,
+                BuildPullRules.IsPlacementValid(PlacementStatus(__instance)));
+
+            if (decision == BuildPullDecision.LetVanillaHandle)
+                return true;
+
+            // Swallowed without a pull: no piece is selected, no ghost exists, or the ghost is not
+            // placeable. Nothing moves and nothing is placed — CFC's own return for these cases.
+            if (decision == BuildPullDecision.RefuseWithoutPull)
+                return false;
+
+            bool pulled = PullEngine.PullToPlayer(selectedPiece.m_resources, 0, 1, __instance, flags);
+            if (pulled)
+            {
+                ShowMessage(__instance, flags.PulledMessage);
+                Debug(flags, "Pull: pulled the materials for building piece '" + selectedPiece.name + "'.");
+            }
+            else
+            {
+                ShowMessage(__instance, FailureReason(__instance, selectedPiece.m_resources, 0, 1, flags));
+            }
+
+            // Intercepted: the press was a pull, so the piece is not placed.
             return false;
         }
 
@@ -205,16 +316,35 @@ namespace CraftFromDrawersAndChests.Patches
         /// Why a refused pull was refused, for the player-facing message: the plan is rebuilt (it is
         /// cheap — the sources are cached for the frame) so a storage shortfall can name the missing
         /// items, de-duplicated; a plan that storage could cover but the inventory could not take
-        /// reports the room failure instead.
+        /// reports the room failure instead. Shared by the recipe and the building-piece pull, which
+        /// differ only in the requirements and the quality/multiplier they pass.
         /// </summary>
         private static string FailureReason(
-            Player player, Recipe recipe, int qualityLevel, int multiplier, FeatureFlags flags)
+            Player player, Piece.Requirement[] requirements, int qualityLevel, int multiplier, FeatureFlags flags)
         {
             Vec3 origin = PullEngine.OriginOf(player);
-            PullPlanResult plan = PullEngine.PlanFor(recipe.m_resources, qualityLevel, multiplier, origin, flags);
+            PullPlanResult plan = PullEngine.PlanFor(requirements, qualityLevel, multiplier, origin, flags);
             return plan.Feasible
                 ? PullKeyRules.NoRoomMessage
                 : PullKeyRules.MissingMessage(plan.MissingItemNames);
+        }
+
+        /// <summary>
+        /// <c>Player.m_placementStatus</c> as a raw <see cref="int"/>, or -1 when it cannot be read.
+        /// The field is private, so it is reached by reflection exactly as CraftFromContainers reaches
+        /// it (CFC line 1115). Reading it here rather than declaring it in the patch signature keeps
+        /// this patch independent of the nested <c>Player.PlacementStatus</c> enum's accessibility —
+        /// only the numeric value is compared. A missing field (a later game version) reads as -1,
+        /// which <see cref="BuildPullRules.IsPlacementValid"/> treats as not valid, so an unknown
+        /// layout fails closed: the press is swallowed with nothing pulled and nothing placed.
+        /// </summary>
+        private static int PlacementStatus(Player player)
+        {
+            if (player == null || PlacementStatusField == null)
+                return -1;
+
+            object value = PlacementStatusField.GetValue(player);
+            return value == null ? -1 : System.Convert.ToInt32(value);
         }
 
         /// <summary>Whether the configured prevent key is held; an unbound key reads as not held.</summary>

@@ -116,6 +116,7 @@
     <Compile Include="Plugin.cs" />
     <Compile Include="PluginConfig.cs" />
     <Compile Include="MultiUserChestBridge.cs" />
+    <Compile Include="Logic\BuildPullRules.cs" />
     <Compile Include="Logic\ChestTake.cs" />
     <Compile Include="Logic\ChestTypeRules.cs" />
     <Compile Include="Logic\ConfigModel.cs" />
