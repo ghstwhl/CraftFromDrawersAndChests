@@ -21,6 +21,13 @@ namespace CraftFromDrawersAndChests.Logic
     /// trimming and dropping empty entries through <see cref="ConfigModel.ParseList"/> (the single
     /// list parser this project already pins with a test).
     /// </para>
+    /// <para>
+    /// <b>The trim-and-drop is a deliberate divergence from CraftFromContainers.</b> CFC's untrimmed
+    /// <c>Split(',').Contains(...)</c> treats the <c>" Stone"</c> in <c>"Wood, Stone"</c> as its own
+    /// literal entry, so a config entry written with a stray space silently fails to match. Trimming
+    /// and dropping empties is friendlier and is kept on purpose, so the test pinning it documents a
+    /// choice rather than asserting the oracle's behaviour.
+    /// </para>
     /// </summary>
     public static class StationFeedRules
     {
@@ -29,8 +36,9 @@ namespace CraftFromDrawersAndChests.Logic
         /// <paramref name="configuredTypes"/>. The comparison is ordinal (so <c>RoundLog</c> does not
         /// match <c>roundlog</c>), exact (so <c>Log</c> does not match <c>RoundLog</c>) and against
         /// the item's <b>prefab</b> name, mirroring CraftFromContainers' own
-        /// <c>Split(',').Contains(item.m_dropPrefab.name)</c>. A null or empty list, and a null or
-        /// empty prefab name, are never a match.
+        /// <c>Split(',').Contains(item.m_dropPrefab.name)</c> except that entries are trimmed and
+        /// empty ones dropped (a deliberate divergence — see the class remarks). A null or empty list,
+        /// and a null or empty prefab name, are never a match.
         /// </summary>
         /// <param name="configuredTypes">The configured comma-separated prefab names; may be null.</param>
         /// <param name="prefabName">The candidate item's prefab name; may be null.</param>

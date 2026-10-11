@@ -68,9 +68,14 @@ See [`tools/README.md`](tools/README.md) for every parameter. In short:
 | Valheim game assemblies | `<Steam>\steamapps\common\Valheim\Valheim_Data\Managed\` — 1.0.16 | All gameplay API facts (`Container`, `ZNetView`, `ZDO`/`ZDOMan`, `Inventory`, `ZRoutedRpc`, `ZPackage`, `Piece`, `Fireplace`, `Smelter`, `CookingStation`, …) |
 | Unity engine modules | same `Managed\` folder (`UnityEngine.dll`, `UnityEngine.CoreModule.dll`, `UnityEngine.PhysicsModule.dll`, `UnityEngine.TextRenderingModule.dll`, `UnityEngine.AnimationModule.dll`, `UnityEngine.ParticleSystemModule.dll`, `UnityEngine.AssetBundleModule.dll`, `UnityEngine.UI.dll`, `Unity.TextMeshPro.dll`) | Unity types the mod touches directly; the csproj references these modules explicitly rather than the whole folder |
 
-The four `assembly_*.dll` files are **publicized** at reference-build time (see §3) so
-internal/private members are usable without reflection. They are copyrighted game binaries
-and are **not** redistributed.
+The four `assembly_*.dll` files are **publicized** at reference-build time (see §3). Publicizing
+changes only the **compile-time** reference: it lets the build bind an `internal`/`private` member so
+the code compiles. It does **not** make that member usable at runtime — the shipped game loads the
+**unpublicized** assembly, which still does not expose it, so a non-public member still fails (or
+throws out of a Harmony prefix on a vanilla method) when the JIT compiles the calling code. The mod
+therefore reaches a member by reflection (`AccessTools`) unless it is `public` in the unpublicized
+assembly — as `Patches/VanillaChestSource.cs`, `Patches/PullKeyPatches.cs` and
+`Patches/StationPatches.cs` do. They are copyrighted game binaries and are **not** redistributed.
 
 ## 3. Modding framework, libraries and tooling
 

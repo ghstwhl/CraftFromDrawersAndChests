@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Reflection;
 using BepInEx.Logging;
 using CraftFromDrawersAndChests.Logic;
 using CraftFromDrawersAndChests.Pull;
@@ -13,11 +15,15 @@ namespace CraftFromDrawersAndChests.Patches
     /// <b>station</b>, not of the player.
     /// <para>
     /// <b>Range is measured from the station.</b> Every patch here hands
-    /// <c>PullEngine</c> the station's own <c>transform.position</c> as the origin, which is exactly
-    /// what CraftFromContainers 4.0.7 does — every one of its station patches collects its sources
-    /// with <c>GetNearbyContainers(__instance.transform.position)</c> (CFC <c>BepInExPlugin.cs</c>
-    /// lines 304, 361, 401, 485, 612). So a chest next to the smelter feeds it even while the player
-    /// stands further away, and a chest out of the smelter's own range cannot.
+    /// <c>PullEngine</c> the station's own <c>transform.position</c> as the origin. CraftFromContainers
+    /// 4.0.7 does exactly that for its fireplace, smelter and cooking-station patches — each collects
+    /// its sources with <c>GetNearbyContainers(__instance.transform.position)</c> (CFC
+    /// <c>BepInExPlugin.cs</c> lines 304, 361, 401, 485, 612) — so a chest next to the smelter feeds it
+    /// even while the player stands further away, and a chest out of the smelter's own range cannot.
+    /// <b>Its turret patch is the exception:</b> CFC measures that one from the <i>player</i>
+    /// (<c>Player.m_localPlayer.transform.position</c>, CFC line 1160). This port keeps the station's
+    /// own transform for the turret too — a deliberate divergence, since the brief asked for the
+    /// station's position — so a chest beside a turret feeds it here even with no chest near the player.
     /// </para>
     /// <para>
     /// <b>The pull is the mod's existing one, unchanged.</b> Each patch makes one call to
@@ -58,6 +64,99 @@ namespace CraftFromDrawersAndChests.Patches
     {
         // Fully qualified: UnityEngine.Logger exists too, so the bare name is ambiguous.
         private static readonly ManualLogSource Log = BepInEx.Logging.Logger.CreateLogSource(ModInfo.ModName);
+
+        // Six of the guards below read vanilla state through methods that are PRIVATE in the shipping
+        // assembly (assembly_valheim.dll) even though the publicized reference this project compiles
+        // against reports them public: Smelter.GetQueueSize/GetFuel and
+        // CookingStation.GetFuel/HaveDoneItem/GetFreeSlot/IsFireLit. A direct call binds at compile time
+        // and is unresolvable at runtime, so each goes through reflection instead. The MethodInfos are
+        // resolved once here and cached in these fields, because the guards run inside per-frame station
+        // interactions. (Turret.GetAmmo and Turret.GetAmmoType are public in the shipping assembly too —
+        // the sanctioned probe confirms it — so those two stay direct calls.)
+        private static readonly MethodInfo SmelterGetQueueSize = Resolve(typeof(Smelter), "GetQueueSize");
+        private static readonly MethodInfo SmelterGetFuel = Resolve(typeof(Smelter), "GetFuel");
+        private static readonly MethodInfo CookingStationGetFuel = Resolve(typeof(CookingStation), "GetFuel");
+        private static readonly MethodInfo CookingStationHaveDoneItem = Resolve(typeof(CookingStation), "HaveDoneItem");
+        private static readonly MethodInfo CookingStationGetFreeSlot = Resolve(typeof(CookingStation), "GetFreeSlot");
+        private static readonly MethodInfo CookingStationIsFireLit = Resolve(typeof(CookingStation), "IsFireLit");
+        private static bool _invokeFailureLogged;
+
+        /// <summary>
+        /// Resolves a parameterless vanilla method for reflection, logging once — at type initialization
+        /// — when it is missing. A null result is not fatal: every guard that uses it fails closed, so
+        /// the station is simply not fed. Uses <see cref="AccessTools"/> so the same member resolves
+        /// whether the assembly exposes it as public or private.
+        /// </summary>
+        private static MethodInfo Resolve(Type type, string name)
+        {
+            MethodInfo method = AccessTools.Method(type, name);
+            if (method == null)
+                Log.LogWarning("StationPatches: vanilla member " + type.Name + "." + name + "() was not found; " +
+                    "stations of this kind will not be fed from storage.");
+            return method;
+        }
+
+        /// <summary>
+        /// Invokes a cached parameterless getter. Returns false — never throwing — when the member is
+        /// unavailable or the invoke fails, so a caller can treat "cannot read" as "cannot feed". A
+        /// failing invoke is logged once, not once per frame.
+        /// </summary>
+        private static bool TryInvoke(MethodInfo method, object instance, out object result)
+        {
+            result = null;
+            if (method == null || instance == null)
+                return false;
+
+            try
+            {
+                result = method.Invoke(instance, null);
+                return true;
+            }
+            catch (Exception e)
+            {
+                if (!_invokeFailureLogged)
+                {
+                    _invokeFailureLogged = true;
+                    Log.LogWarning("StationPatches: a vanilla station member threw on invoke; affected " +
+                        "stations will not be fed. " + e.Message);
+                }
+                return false;
+            }
+        }
+
+        /// <summary>Reads a cached parameterless <c>int</c> getter; false when it cannot be read.</summary>
+        private static bool TryInvokeInt(MethodInfo method, object instance, out int value)
+        {
+            value = 0;
+            if (!TryInvoke(method, instance, out object result) || !(result is int))
+                return false;
+            value = (int)result;
+            return true;
+        }
+
+        /// <summary>Reads a cached parameterless <c>float</c> getter; false when it cannot be read.</summary>
+        private static bool TryInvokeFloat(MethodInfo method, object instance, out float value)
+        {
+            value = 0f;
+            if (!TryInvoke(method, instance, out object result) || !(result is float))
+                return false;
+            value = (float)result;
+            return true;
+        }
+
+        /// <summary>
+        /// Reads a cached parameterless <c>bool</c> getter; returns whether it could be read (so the
+        /// caller can tell a real <c>false</c> from an unreadable one), with the value in
+        /// <paramref name="value"/> when it could.
+        /// </summary>
+        private static bool TryInvokeBool(MethodInfo method, object instance, out bool value)
+        {
+            value = false;
+            if (!TryInvoke(method, instance, out object result) || !(result is bool))
+                return false;
+            value = (bool)result;
+            return true;
+        }
 
         /// <summary>
         /// Feeds a fireplace from storage near the fireplace. Mirrors CraftFromContainers 4.0.7's
@@ -145,7 +244,9 @@ namespace CraftFromDrawersAndChests.Patches
             if (inventory == null)
                 return true;
 
-            if (StationFeedRules.RemainingCapacity(__instance.m_maxOre, __instance.GetQueueSize()) <= 0)
+            // Smelter.GetQueueSize() is private in the shipping assembly: reflect, fail closed.
+            if (!TryInvokeInt(SmelterGetQueueSize, __instance, out int queueSize)
+                || StationFeedRules.RemainingCapacity(__instance.m_maxOre, queueSize) <= 0)
                 return true;
 
             // CFC lines 468-479: if the player's own inventory already holds one of the smelter's
@@ -188,7 +289,9 @@ namespace CraftFromDrawersAndChests.Patches
             if (inventory == null)
                 return true;
 
-            if (StationFeedRules.RemainingFuelCapacity(__instance.m_maxFuel, __instance.GetFuel()) <= 0)
+            // Smelter.GetFuel() is private in the shipping assembly: reflect, fail closed.
+            if (!TryInvokeFloat(SmelterGetFuel, __instance, out float smelterFuel)
+                || StationFeedRules.RemainingFuelCapacity(__instance.m_maxFuel, smelterFuel) <= 0)
                 return true;
 
             ItemDrop fuelItem = __instance.m_fuelItem;
@@ -232,7 +335,9 @@ namespace CraftFromDrawersAndChests.Patches
             if (inventory == null)
                 return true;
 
-            if (StationFeedRules.RemainingFuelCapacity(__instance.m_maxFuel, __instance.GetFuel()) <= 0)
+            // CookingStation.GetFuel() is private in the shipping assembly: reflect, fail closed.
+            if (!TryInvokeFloat(CookingStationGetFuel, __instance, out float cookingFuel)
+                || StationFeedRules.RemainingFuelCapacity(__instance.m_maxFuel, cookingFuel) <= 0)
                 return true;
 
             ItemDrop fuelItem = __instance.m_fuelItem;
@@ -287,9 +392,12 @@ namespace CraftFromDrawersAndChests.Patches
             if (flags == null)
                 return true;
 
-            // This same method collects the finished food first; pulling an ingredient for that would
-            // be pulling for an interaction that only wants to take the cooked item out.
-            if (__instance.HaveDoneItem())
+            // CFC DIVERGENCE: CFC's FindCookableItem postfix has no such guard and can pull an
+            // ingredient for an interaction that only wants to take the finished food out. This patch
+            // runs earlier (OnInteract) and skips the pull when the station already holds a done item,
+            // which can only make it pull less; the station is fed on the next interaction.
+            // HaveDoneItem() is private in the shipping assembly: reflect, fail closed.
+            if (!TryInvokeBool(CookingStationHaveDoneItem, __instance, out bool doneItem) || doneItem)
                 return true;
 
             Player player = user as Player;
@@ -298,11 +406,13 @@ namespace CraftFromDrawersAndChests.Patches
                 return true;
 
             // CFC's guard line (395): a station with nowhere to put food, or whose fire is out while
-            // the station requires one, is not fed.
-            if (__instance.GetFreeSlot() == -1)
+            // the station requires one, is not fed. GetFreeSlot() and IsFireLit() are private in the
+            // shipping assembly: reflect, fail closed.
+            if (!TryInvokeInt(CookingStationGetFreeSlot, __instance, out int freeSlot) || freeSlot == -1)
                 return true;
 
-            if (__instance.m_requireFire && !__instance.IsFireLit())
+            if (__instance.m_requireFire
+                && (!TryInvokeBool(CookingStationIsFireLit, __instance, out bool fireLit) || !fireLit))
                 return true;
 
             if (__instance.FindCookableItem(inventory) != null)
@@ -331,9 +441,16 @@ namespace CraftFromDrawersAndChests.Patches
         /// matching CraftFromContainers exactly.
         /// </para>
         /// <para>
-        /// The ammunition type follows CFC's own choice (line 1140): the type the turret already has
-        /// loaded when it holds any, and its configured <c>m_ammoType</c> otherwise, so the item this
-        /// patch supplies is the one vanilla's <c>UseItem</c> will look for.
+        /// <b>The ammunition type is <c>GetAmmoType()</c>, unconditionally.</b> That is the prefab
+        /// lookup CraftFromContainers itself performs for this case (CFC line 1145); CFC passes the
+        /// configured <c>m_ammoType</c> only to its <i>inventory</i> lookup (line 1140), which vanilla
+        /// performs here because this patch hands the item back to vanilla's own <c>UseItem</c>. The
+        /// probe shows <c>Turret::GetAmmoType</c> reads the ZDO string <c>s_ammoType</c> with
+        /// <c>m_ammoType</c> as its default, while <c>Turret::GetAmmo</c> reads the independent ZDO int
+        /// <c>s_ammo</c>, so <c>GetAmmoType()</c> can differ from <c>m_ammoType</c> while
+        /// <c>GetAmmo() == 0</c> — a turret emptied of a non-default type keeps that type's name in
+        /// its ZDO. Unconditional <c>GetAmmoType()</c> is therefore the name vanilla's <c>UseItem</c>
+        /// will accept, and the type this patch looks for in storage.
         /// </para>
         /// </summary>
         [HarmonyPatch(typeof(Turret), "UseItem")]
@@ -361,7 +478,10 @@ namespace CraftFromDrawersAndChests.Patches
             if (StationFeedRules.RemainingCapacity(__instance.m_maxAmmo, __instance.GetAmmo()) <= 0)
                 return true;
 
-            string ammoType = __instance.GetAmmo() > 0 ? __instance.GetAmmoType() : __instance.m_ammoType;
+            // GetAmmoType() is public in the shipping assembly and reads the turret's own ZDO
+            // "ammoType" (default m_ammoType), so it is the prefab name to look up in both the empty
+            // and loaded cases — exactly the prefab CFC resolves at its line 1145.
+            string ammoType = __instance.GetAmmoType();
             if (string.IsNullOrEmpty(ammoType))
                 return true;
 
