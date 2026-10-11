@@ -68,5 +68,56 @@ namespace CraftFromDrawersAndChests.Tests.Logic
         {
             Assert.That(ToggleRules.IsKeyConfigured("left ctrl"), Is.True);
         }
+
+        [Test]
+        public void ToggleHint_BoundKey_NamesTheKey()
+        {
+            Assert.That(ToggleRules.ToggleHint("left shift"), Is.EqualTo(" (press Left Shift to toggle)"));
+        }
+
+        [Test]
+        public void ToggleHint_SingleLetterKey_IsCapitalised()
+        {
+            Assert.That(ToggleRules.ToggleHint("n"), Is.EqualTo(" (press N to toggle)"));
+        }
+
+        [Test]
+        public void ToggleHint_RemainingLettersAreLowerCased()
+        {
+            // A setting written in an unexpected case must still read sensibly, not as "LeFt ShIfT".
+            Assert.That(ToggleRules.ToggleHint("LeFt ShIfT"), Is.EqualTo(" (press Left Shift to toggle)"));
+        }
+
+        [Test]
+        public void ToggleHint_Unbound_SaysNoKeyIsSet()
+        {
+            const string expected = " (no toggle key is set)";
+            Assert.That(ToggleRules.ToggleHint(null), Is.EqualTo(expected));
+            Assert.That(ToggleRules.ToggleHint(string.Empty), Is.EqualTo(expected));
+            Assert.That(ToggleRules.ToggleHint("   "), Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void ToggleHint_UnboundAndBound_Differ()
+        {
+            Assert.That(ToggleRules.ToggleHint(null), Is.Not.EqualTo(ToggleRules.ToggleHint("n")));
+        }
+
+        [Test]
+        public void ToggleHint_NeverRepeatsTheState()
+        {
+            // The hint is about the key only, so appending it after either state cannot read as though
+            // the state itself were ambiguous.
+            Assert.That(ToggleRules.ToggleHint("n"), Does.Not.Contain("pull:"));
+            Assert.That(ToggleRules.ToggleHint(null), Does.Not.Contain("pull:"));
+        }
+
+        [Test]
+        public void HoverSuffixAndToggleHint_AreBothPresentInAFullHoverLine()
+        {
+            // What a player actually sees, end to end for both halves of the addition.
+            string line = "Wood chest" + ToggleRules.HoverSuffix(false) + ToggleRules.ToggleHint("n");
+            Assert.That(line, Is.EqualTo("Wood chest<color=#55FF55> (pull: on)</color> (press N to toggle)"));
+        }
     }
 }

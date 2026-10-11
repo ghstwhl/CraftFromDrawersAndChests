@@ -4,6 +4,19 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-10-12
+
+### Added
+
+- **The storage hover line now names the key that flips the per-storage switch.** A chest or drawer
+  reads `Wood chest (pull: on) (press N to toggle)`, and when no key is bound it says
+  `(no toggle key is set)` instead. The suffix reported the state but not how to change it, and because
+  `Toggle storage key` is a server-authoritative setting a client cannot necessarily read it out of
+  their own configuration file - so the hover line is the only place a player can learn it.
+- Both kinds of storage now build that text through one function. A chest and a drawer produce hover
+  text through different game methods, and two call sites each appending their own string is how the
+  drawer half came to show a state with no key while the chest half showed neither.
+
 ## [0.1.4] - 2026-10-12
 
 ### Fixed

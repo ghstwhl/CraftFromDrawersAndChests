@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace CraftFromDrawersAndChests.Logic
 {
     /// <summary>
@@ -45,6 +47,57 @@ namespace CraftFromDrawersAndChests.Logic
         public static bool IsKeyConfigured(string key)
         {
             return !string.IsNullOrWhiteSpace(key);
+        }
+
+        /// <summary>
+        /// The hover hint that names the key which flips a storage's switch, or states plainly that no
+        /// key is bound. It sits alongside <see cref="HoverSuffix"/>, which reports the state but not
+        /// how to change it - and this setting is server-authoritative, so a client cannot necessarily
+        /// read the key out of their own configuration file.
+        /// <para>
+        /// The unbound wording is a statement rather than an instruction to change a setting, for that
+        /// same reason: the value a client sees comes from the server, so "set this yourself" could be
+        /// wrong. A configured name is shown as a player would say it - "left shift" reads as
+        /// "Left Shift".
+        /// </para>
+        /// </summary>
+        /// <param name="configuredKey">The configured key name; null, empty or whitespace means unbound.</param>
+        public static string ToggleHint(string configuredKey)
+        {
+            return IsKeyConfigured(configuredKey)
+                ? " (press " + DisplayKeyName(configuredKey) + " to toggle)"
+                : " (no toggle key is set)";
+        }
+
+        /// <summary>
+        /// A configured key name as it should read to a player: each space-separated word capitalised,
+        /// so the stored <c>"left shift"</c> shows as <c>"Left Shift"</c>. The rest of each word is
+        /// lower-cased, so an unexpected casing in the setting is still legible rather than mangled,
+        /// and the separators are preserved so the name keeps the shape it was configured with.
+        /// </summary>
+        private static string DisplayKeyName(string key)
+        {
+            string trimmed = key.Trim();
+            if (trimmed.Length == 0)
+                return trimmed;
+
+            var builder = new StringBuilder(trimmed.Length);
+            bool startOfWord = true;
+            for (int i = 0; i < trimmed.Length; i++)
+            {
+                char c = trimmed[i];
+                if (c == ' ')
+                {
+                    startOfWord = true;
+                    builder.Append(c);
+                    continue;
+                }
+
+                builder.Append(startOfWord ? char.ToUpperInvariant(c) : char.ToLowerInvariant(c));
+                startOfWord = false;
+            }
+
+            return builder.ToString();
         }
     }
 }

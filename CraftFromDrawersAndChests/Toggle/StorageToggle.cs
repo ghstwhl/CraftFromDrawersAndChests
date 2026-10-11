@@ -63,6 +63,32 @@ namespace CraftFromDrawersAndChests.Toggle
         }
 
         /// <summary>
+        /// The complete hover addition for a storage: its switch state and the key that flips it. Both
+        /// halves are pure (<see cref="ToggleRules"/>); this is the game-facing entry point, reading the
+        /// live snapshot. An empty string for a null view, so a caller can append unconditionally.
+        /// <para>
+        /// One entry point for both kinds of storage on purpose: a chest and a drawer produce their
+        /// hover text through different methods (<c>Container.GetHoverText</c> and the drawer's own),
+        /// and two call sites appending two strings each is how the drawer half came to show a state
+        /// with no key while the chest half showed neither.
+        /// </para>
+        /// </summary>
+        public static string HoverText(ZNetView view)
+        {
+            return view == null ? string.Empty : HoverSuffix(IsOff(view)) + ToggleHint();
+        }
+
+        /// <summary>
+        /// The hint naming the configured toggle key, or stating that none is bound. The shipped default
+        /// is empty, so the hint is what tells a player the switch exists but is unbound.
+        /// </summary>
+        public static string ToggleHint()
+        {
+            FeatureFlags flags = PluginConfig.Flags;
+            return ToggleRules.ToggleHint(flags != null ? flags.ToggleStorageKey : null);
+        }
+
+        /// <summary>
         /// Whether the configured toggle key is pressed this frame while it is bound. The shipped
         /// default is empty, so the toggle is unbound out of the box and this returns false. An empty
         /// value must never reach <c>Input</c>, which throws on it, and an unrecognised name throws

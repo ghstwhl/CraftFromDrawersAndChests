@@ -98,7 +98,7 @@ namespace CraftFromDrawersAndChests.Toggle
             if (view == null)
                 return;
 
-            text += StorageToggle.HoverSuffix(StorageToggle.IsOff(view));
+            text += StorageToggle.HoverText(view);
         }
     }
 
@@ -135,7 +135,7 @@ namespace CraftFromDrawersAndChests.Toggle
             if (view == null || !DrawerApi.IsDrawer(view))
                 return;
 
-            __result += StorageToggle.HoverSuffix(StorageToggle.IsOff(view));
+            __result += StorageToggle.HoverText(view);
         }
 
         private static Type DrawerComponentType()
