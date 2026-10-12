@@ -16,11 +16,14 @@ In short: CraftFromContainers, but for drawers too.
   inventory on demand.
 - **Station feeding.** Fireplaces, smelters and cooking stations pull fuel, ore and cooking
   ingredients from storage.
-- **One range, both storage kinds.** A single range setting (default 4 m) applies to chests
-  and drawers alike.
+- **One range, both storage kinds.** A single range setting (default 10 m, and `0` or less
+  means unlimited, matching CraftFromContainers) applies to chests and drawers alike.
 - **Per-storage switch.** Flip a chest or drawer off with a hotkey while hovering it, and
   this mod never pulls from it. The switch lives on the object, so it is shared with
   everyone and saved with the world.
+- **Your backpack counts.** With **Adventure Backpacks**, materials in your equipped backpack
+  count as held while crafting and building — under that mod's own rules, and without moving
+  anything into your inventory to make it work.
 - **Server-authoritative config.** Settings are registered with Jötunn, so the server's
   values are pushed to clients and non-admins cannot change them.
 
@@ -37,6 +40,9 @@ In short: CraftFromContainers, but for drawers too.
   players can use the same chest at once without desync.
 - **KG Item Drawers 1.4.0** — optional. With it absent the mod runs chest-only; with it
   present, drawers are pulled from as well.
+- **Adventure Backpacks 2.3.x** — optional. With it installed, materials in your equipped
+  backpack count as held when crafting and building, using Adventure Backpacks' own rules
+  (including its *Leave One Item In Backpack* setting).
 
 ### Remove these before installing
 
@@ -64,6 +70,36 @@ launch and can be edited in-game with the BepInEx ConfigurationManager. The serv
 win; clients receive them on connect.
 
 See [CHANGELOG.md](CHANGELOG.md) for the release history.
+
+## Troubleshooting
+
+**A storage's contents are not being counted.** Hover it. If the hover text ends with
+`(pull: off)`, that storage is switched off — for everyone, permanently, on that object — and this
+mod will never pull from it. The switch is flipped by the *Toggle storage key* while the storage is
+under your crosshair, so **do not bind that key to a movement key**: the shipped default is
+`left shift + e`, and a key you press while walking (such as `S`) will silently toggle whatever you
+happen to be looking at.
+
+**Storage that is further away is ignored.** Only storage within *Maximum range* of you — or of the
+station, for the fuel, ore and cooking features — is used at all. `0` or less means unlimited, but
+that also means every storage you own is scanned.
+
+**The available amount is one below what I am carrying.** Materials in your equipped
+**Adventure Backpacks** backpack are counted as held, which means they follow that mod's rules too.
+With its *Leave One Item In Backpack* option enabled, one item of each type is deliberately left
+uncounted **and** unconsumed, so 25 carried legitimately reads as 24. Turn that option off in
+Adventure Backpacks if you want the whole stack usable.
+
+**An ingredient is in my backpack but the panel shows none.** Check Adventure Backpacks' *Enable
+Craft From Backpack* setting. With it disabled the backpack is not counted here either — and that
+mod will not consume from it either.
+
+**Nothing is pulled while I hold a modifier.** The *Prevent mod key* (default `left alt`) suspends
+this mod entirely while it is held, so only your inventory is used. Note that KG Item Drawers binds
+`Left Alt + Use` to "withdraw a single item" as well, so that key does double duty.
+
+**A pull did not deliver everything.** Delivery goes into your inventory, so it needs room there: a
+matching free stack, or an empty slot for an item that does not stack (such as a Dvergr lantern).
 
 ## Building from source
 
