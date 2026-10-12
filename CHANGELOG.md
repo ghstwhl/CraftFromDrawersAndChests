@@ -4,6 +4,42 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-10-13
+
+First stable release. Behaviourally this is the build validated in game as `0.1.13` — the version bump
+changes no code — with the README brought up to date.
+
+### What it does
+
+- **Craft and build from storage.** Chests and **KG Item Drawers** drawers within one range (default
+  10 m; `0` or less means unlimited, matching CraftFromContainers) supply the materials for crafting
+  stations, the crafting menu and the build hammer.
+- **Pull on demand.** Hold **left ctrl** and ctrl-click a recipe or a placement to move its ingredients
+  into your inventory instead of crafting it.
+- **Station feeding.** Fireplaces, smelters, cooking stations and turrets draw fuel, ore and cooking
+  ingredients from storage; **left shift** asks for the station's whole remaining capacity rather than
+  one item per interaction, and the hover text names the key.
+- **Your backpack counts.** With **Adventure Backpacks**, materials in your equipped backpack count
+  while crafting and building, under that mod's own rules — including its *Leave One Item In Backpack*
+  option, which is why a carried stack of 25 can read as 24.
+- **All-or-nothing.** If the whole requirement cannot be secured, nothing is consumed, so a craft is
+  never paid for by nothing. Storage yes is not enough either: the destination inventory must have room
+  for what the pull would deliver.
+- **Per-storage switch.** Any chest or drawer can be taken out of pulling for everyone with a hotkey
+  while hovering it. The switch lives on the object, so it is shared and saved with the world.
+- **Server-authoritative config.** The server's values are pushed to clients and non-admins cannot
+  change them, and every player and the server must run the same version.
+
+### Notes
+
+- Chest reads and removals go through **MultiUserChest**, so two players can use one chest at once
+  without desync; drawer removals use Item Drawers' own `ForceRemove` RPC and never write a drawer's
+  ZDO amount.
+- Item Drawers support is pinned to that mod's 1.4.0 ZDO contract and RPCs. If they change, drawer
+  pulling degrades to chest-only rather than failing.
+- The README's Troubleshooting section covers the per-storage switch, `Maximum range`, and the
+  Adventure Backpacks interaction.
+
 ## [0.1.13] - 2026-10-13
 
 ### Fixed
