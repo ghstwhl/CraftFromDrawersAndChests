@@ -4,6 +4,32 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-10-13
+
+Supersedes `1.0.0`, which was packaged locally but never published.
+
+### Changed
+
+- **The per-storage toggle now defaults to `x`** instead of `left shift + e`.
+  The old default collided with Item Drawers' own "withdraw single item" hotkey, which is really
+  **LeftShift + E** — its hover text calls it "Left Alt + E", but its code reads KeyCode 304, and in
+  Unity's enum 304 is LeftShift while 308 is LeftAlt — so on a drawer one press did both. `x` is read
+  by neither the game nor Item Drawers (`E`, LeftShift) nor Adventure Backpacks (`I`, `Y`).
+  **Existing installs keep their configured value** — BepInEx preserves a value once it is written, so
+  this only affects a fresh config. If yours is bound to a movement key (`W`, `A`, `S` or `D`), change
+  it: the toggle flips whatever storage is under your crosshair, so a movement key switches storage off
+  silently as you walk.
+- **Debug logging is now off by default.** It was on, which wrote this mod's diagnostics into every
+  player's log. A fresh config is now quiet; an existing config keeps whatever it has.
+
+### Fixed
+
+- Comment only, no behaviour change: `CountHeldBySharedName` claimed that station feeding never reads
+  the held count. It does — a station's shortfall is planned through the same planner — and that is
+  correct only because Adventure Backpacks' craft scope is closed on those interaction paths, so its
+  backpack contribution is absent exactly where a station could not consume it. The comment now records
+  that dependency, because relying on it silently is how a station would end up under-fed.
+
 ## [1.0.0] - 2026-10-13
 
 First stable release. Behaviourally this is the build validated in game as `0.1.13` — the version bump

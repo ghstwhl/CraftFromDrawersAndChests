@@ -65,5 +65,21 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             Assert.That(ConfigModel.DefaultFillAllModKey, Is.EqualTo("left shift"));
             Assert.That(ConfigModel.DefaultSwitchPrevent, Is.False);
         }
+
+        [Test]
+        public void Defaults_ToggleKeyIsOneKeyAndNotAMovementKey()
+        {
+            // The toggle fires on a key-down while storage is under the crosshair, so a movement key
+            // would switch storage off silently as the player walks - the failure that disabled a
+            // drawer once already. A combination is rejected too: it would put an interaction key (E)
+            // at the end of it, which is how the old "left shift + e" default came to collide with
+            // Item Drawers' own single-item withdraw hotkey.
+            string key = ConfigModel.DefaultToggleStorageKey;
+
+            Assert.That(key, Is.Not.Null.And.Not.Empty);
+            Assert.That(key.Contains("+"), Is.False, "one key: the crosshair already scopes it");
+            Assert.That(new[] { "w", "a", "s", "d" }, Does.Not.Contain(key.ToLowerInvariant()),
+                "never a movement key");
+        }
     }
 }

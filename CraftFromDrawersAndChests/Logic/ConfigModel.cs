@@ -64,6 +64,24 @@ namespace CraftFromDrawersAndChests.Logic
         public const bool DefaultSwitchPrevent = false;
 
         /// <summary>
+        /// The per-storage toggle's default key: a single letter, not a combination. The toggle is a
+        /// key-down check on <c>Player.Update</c> and flips whatever storage is under the crosshair, so
+        /// the key must be one a player does not press while walking. A combination's last key is
+        /// usually an interaction key, and the earlier default <c>left shift + e</c> (inherited from
+        /// AzuCraftyBoxes) collided with Item Drawers' own "withdraw single item" hotkey, which is
+        /// really LeftShift+E — its hover text calls it Left Alt, but its code reads KeyCode 304, and
+        /// Unity's enum makes 304 LeftShift and 308 LeftAlt.
+        /// <para>
+        /// <c>x</c> (KeyCode 120) is read by neither the game — no literal 120 in
+        /// <c>assembly_valheim.dll</c> is a key code — nor by Item Drawers (<c>E</c>, LeftShift) or
+        /// Adventure Backpacks (<c>I</c>, <c>Y</c>). That evidence is recorded because the whole point
+        /// of the choice is that an accidental toggle is silent: the owner lost a drawer to a movement
+        /// key once already.
+        /// </para>
+        /// </summary>
+        public const string DefaultToggleStorageKey = "x";
+
+        /// <summary>
         /// The per-storage off-switch key. A single boolean stored under this key on the
         /// storage's own ZDO marks it "off" for everyone — the switch is a shared world
         /// property, not a per-player one. Defined here, ahead of the sources (Tasks 9/10) and

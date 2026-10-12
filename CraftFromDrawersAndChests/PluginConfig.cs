@@ -132,8 +132,8 @@ namespace CraftFromDrawersAndChests
 
             pullItemsKey = Bind(config, ConfigModel.SectionKeys, ConfigModel.PullItemsKey, "left ctrl",
                 "Held key that pulls a recipe's ingredients into the inventory. Use a Unity key name.");
-            toggleStorageKey = Bind(config, ConfigModel.SectionKeys, ConfigModel.ToggleStorageKey, "left shift + e",
-                "Key or key combination that toggles a hovered storage on or off. Write a combination like \"left shift + e\": every name but the last must be held, and the last is pressed. Empty leaves the toggle unbound. AzuCraftyBoxes uses LeftShift+E for the same feature.");
+            toggleStorageKey = Bind(config, ConfigModel.SectionKeys, ConfigModel.ToggleStorageKey, ConfigModel.DefaultToggleStorageKey,
+                "Pressed to toggle a hovered storage on or off. The crosshair decides what it applies to, so a single key is usual and a movement key must never be used: it would toggle whatever you look at while walking. A combination such as \"left shift + e\" also works - every name but the last is held, and the last is pressed. Empty leaves the toggle unbound.");
             preventModKey = Bind(config, ConfigModel.SectionKeys, ConfigModel.PreventModKey, ConfigModel.DefaultPreventModKey,
                 "Held key that suppresses this mod's pulling. Use a Unity key name.");
             fillAllModKey = Bind(config, ConfigModel.SectionKeys, ConfigModel.FillAllModKey, ConfigModel.DefaultFillAllModKey,
@@ -141,7 +141,7 @@ namespace CraftFromDrawersAndChests
             switchPrevent = Bind(config, ConfigModel.SectionKeys, ConfigModel.SwitchPrevent, ConfigModel.DefaultSwitchPrevent,
                 "If true, holding the prevent key enables this mod's pulling instead of suppressing it.");
 
-            isDebug = Bind(config, ConfigModel.SectionDebug, ConfigModel.IsDebug, true,
+            isDebug = Bind(config, ConfigModel.SectionDebug, ConfigModel.IsDebug, false,
                 "Print debug messages to the log.");
 
             // Jötunn writes the server's values into these entries after Init has run and then

@@ -77,8 +77,8 @@ See [CHANGELOG.md](CHANGELOG.md) for the release history.
 `(pull: off)`, that storage is switched off — for everyone, permanently, on that object — and this
 mod will never pull from it. The switch is flipped by the *Toggle storage key* while the storage is
 under your crosshair, so **do not bind that key to a movement key**: the shipped default is
-`left shift + e`, and a key you press while walking (such as `S`) will silently toggle whatever you
-happen to be looking at.
+`x`, and a key you press while walking (such as `W` or `S`) will silently toggle whatever you happen
+to be looking at.
 
 **Storage that is further away is ignored.** Only storage within *Maximum range* of you — or of the
 station, for the fuel, ore and cooking features — is used at all. `0` or less means unlimited, but
@@ -95,8 +95,7 @@ Craft From Backpack* setting. With it disabled the backpack is not counted here 
 mod will not consume from it either.
 
 **Nothing is pulled while I hold a modifier.** The *Prevent mod key* (default `left alt`) suspends
-this mod entirely while it is held, so only your inventory is used. Note that KG Item Drawers binds
-`Left Alt + Use` to "withdraw a single item" as well, so that key does double duty.
+this mod entirely while it is held, so only your inventory is used.
 
 **A pull did not deliver everything.** Delivery goes into your inventory, so it needs room there: a
 matching free stack, or an empty slot for an item that does not stack (such as a Dvergr lantern).

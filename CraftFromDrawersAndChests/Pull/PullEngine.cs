@@ -753,9 +753,15 @@ namespace CraftFromDrawersAndChests.Pull
         /// promise what the consume step cannot find.
         /// </para>
         /// <para>
-        /// Station feeding deliberately does not come through here: a fireplace, smelter or cooking
-        /// station takes its input out of <c>player.GetInventory()</c> alone, so an item in a backpack
-        /// is genuinely not available to it and must not count as held.
+        /// <b>Station feeding does come through here</b> — <c>StationPatches</c> plans a station's
+        /// shortfall with the same planner — and it is correct only because Adventure Backpacks' craft
+        /// scope is <i>closed</i> on those interaction paths (<c>Fireplace.Interact</c>, the smelter's
+        /// add RPCs, the cooking station): with the scope closed AB's postfix contributes nothing, so an
+        /// item in a backpack is not counted as held for a station that takes its input out of
+        /// <c>player.GetInventory()</c> alone and could not consume it. That safety therefore rests on
+        /// AB's gating and not on any structural separation here, which is why it is written down: if AB
+        /// ever widened its scope, the backpack would start counting for stations too and a station
+        /// could be under-fed, removing items that never arrive.
         /// </para>
         /// </summary>
         /// <param name="inventory">The player's own inventory — the one <c>Inventory</c> AB extends; may be null, which reads as none held.</param>
