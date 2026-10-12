@@ -86,6 +86,33 @@ namespace CraftFromDrawersAndChests.Storage
         }
 
         /// <summary>
+        /// The drawer's raw ZDO values as they are actually stored — the prefab string it holds its
+        /// item under, its amount, and its per-storage off switch — for the debug log only
+        /// (<c>Patches.PullKeyPatches</c>). A drawer that stores an item under a <i>different</i>
+        /// prefab string than a requirement names is indistinguishable from one that is out of range
+        /// or switched off, and neither half of that comparison is visible in the game's own UI; this
+        /// is the one place the two can be seen together. Returns false when the drawer is gone.
+        /// </summary>
+        public bool TryReadRaw(out string prefab, out int amount, out bool toggledOff)
+        {
+            prefab = null;
+            amount = 0;
+            toggledOff = false;
+
+            if (!IsValid)
+                return false;
+
+            ZDO zdo = _handle.View.GetZDO();
+            if (zdo == null)
+                return false;
+
+            prefab = zdo.GetString(DrawerApi.PrefabKey, string.Empty);
+            amount = zdo.GetInt(DrawerApi.AmountKey, 0);
+            toggledOff = zdo.GetBool(NoPullHash, false);
+            return true;
+        }
+
+        /// <summary>
         /// Takes up to <paramref name="amount"/> of the given prefab out of the drawer and delivers
         /// them into <paramref name="destination"/>, returning how many were actually delivered.
         /// <para>

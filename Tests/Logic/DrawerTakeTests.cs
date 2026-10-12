@@ -181,8 +181,8 @@ namespace CraftFromDrawersAndChests.Tests.Logic
         // IsSameItem is the DESTINATION identity: the delivery's free-space check
         // (MatchingFreeStackSpace) and the strict count MatchingAmount both match on it, so pinning it
         // pins that pair. The SOURCE half — the held count a pull subtracts — deliberately does not:
-        // it is counted by shared name alone (see HeldAmountTests) so it can never fall below what
-        // vanilla consumes.
+        // it is the game's own Inventory.CountItems by shared name alone
+        // (PullEngine.CountHeldBySharedName), so it can never fall below what vanilla consumes.
 
         [Test]
         public void IsSameItem_MatchesOnlyNameQualityAndWorldLevel()
@@ -236,8 +236,8 @@ namespace CraftFromDrawersAndChests.Tests.Logic
         {
             // Same stacks, same predicate: a full matching stack is counted by MatchingAmount yet
             // offers no free space. This is the strict pair the destination half is built from. The
-            // source half is deliberately looser (HeldAmount, name only), which is what keeps a
-            // shortfall a superset of what vanilla consumes — see HeldAmountTests.
+            // source half is deliberately looser — the game's own count by shared name alone — which
+            // is what keeps a shortfall a superset of what vanilla consumes.
             var inventory = new[]
             {
                 Stack("$item_wood", 1, 0, 5, 20),

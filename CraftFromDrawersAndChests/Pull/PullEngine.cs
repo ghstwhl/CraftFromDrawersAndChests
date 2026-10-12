@@ -86,12 +86,12 @@ namespace CraftFromDrawersAndChests.Pull
         /// <summary>
         /// Turns requirements into the planner's requests, each reduced to the part the player does
         /// <b>not</b> already hold — the shortfall below <c>GetAmount(qualityLevel) * multiplier</c>.
-        /// The held amount is counted by <b>shared name alone</b> (<see cref="DrawerTake.HeldAmount"/>):
-        /// every same-name stack counts, whatever its quality or world level. That makes the count a
-        /// <b>superset</b> of the amount vanilla will consume — vanilla's consume identity is the shared
-        /// name and its requirement test counts with quality <c>-1</c> — so the shortfall it produces
-        /// can never be inflated past what vanilla would truly take. A requirement the player already
-        /// covers produces no request at all.
+        /// The held amount is counted by <b>shared name alone</b>
+        /// (<see cref="CountHeldBySharedName"/>): every same-name stack counts, whatever its quality
+        /// or world level. That makes the count a <b>superset</b> of the amount vanilla will consume —
+        /// vanilla's consume identity is the shared name and its requirement test counts with quality
+        /// <c>-1</c> — so the shortfall it produces can never be inflated past what vanilla would truly
+        /// take. A requirement the player already covers produces no request at all.
         /// <para>
         /// This is the entry point the crafting and building pulls (and their requirement gates) share.
         /// It deliberately diverges from CraftFromContainers, which asks storage for the whole
@@ -114,16 +114,17 @@ namespace CraftFromDrawersAndChests.Pull
         }
 
         /// <summary>
-        /// How many of each requirement's item the inventory already holds, keyed by the requirement's
-        /// prefab name (the identifier the requests use). The amount itself is
-        /// <see cref="DrawerTake.HeldAmount"/> — counted by the item's <b>shared name</b>, ignoring
-        /// quality and world level — the superset of what vanilla consumes that the shortfall depends
-        /// on. The <i>key</i> stays the prefab name because that is what the requests and the storage
-        /// layer share; the requirement's own item supplies the shared name to count by. A requirement
-        /// with no resolvable item contributes no entry (it produces no request either), and two
+        /// How many of each requirement's item the inventory's pool already holds, keyed by the
+        /// requirement's prefab name (the identifier the requests use). The amount itself comes from
+        /// <see cref="CountHeldBySharedName"/> — the game's own count, by the item's <b>shared name</b>,
+        /// any quality and any world level — which is the superset of what vanilla consumes the
+        /// shortfall depends on, and which includes an equipped AdventureBackpacks backpack exactly
+        /// when that mod will also pay from it. The <i>key</i> stays the prefab name because that is
+        /// what the requests and the storage layer share; the requirement's own item supplies the
+        /// shared name to count by. A requirement with no resolvable item contributes no entry (it
+        /// produces no request either — <see cref="SharedNameOf"/> reads it as none held), and two
         /// requirements that share a prefab name share the first entry — the planner keys its stock by
-        /// that name too. The inventory is reduced to the pure stack view at most once, and only if
-        /// there is a requirement whose identity can be read.
+        /// that name too.
         /// </summary>
         private static IReadOnlyDictionary<string, int> HeldCounts(
             Piece.Requirement[] requirements, Inventory inventory)
@@ -132,7 +133,6 @@ namespace CraftFromDrawersAndChests.Pull
             if (requirements == null || inventory == null)
                 return held;
 
-            List<DrawerTake.InventoryStack> stacks = null;
             for (int i = 0; i < requirements.Length; i++)
             {
                 Piece.Requirement requirement = requirements[i];
@@ -143,14 +143,7 @@ namespace CraftFromDrawersAndChests.Pull
                 if (string.IsNullOrEmpty(prefab) || held.ContainsKey(prefab))
                     continue;
 
-                ItemDrop.ItemData data = ItemDataOf(requirement);
-                if (data == null || data.m_shared == null || string.IsNullOrEmpty(data.m_shared.m_name))
-                    continue;
-
-                if (stacks == null)
-                    stacks = InventoryStacks(inventory);
-
-                held[prefab] = DrawerTake.HeldAmount(data.m_shared.m_name, stacks);
+                held[prefab] = CountHeldBySharedName(inventory, SharedNameOf(requirement));
             }
             return held;
         }
@@ -660,6 +653,19 @@ namespace CraftFromDrawersAndChests.Pull
         }
 
         /// <summary>
+        /// The shared name (<c>"$item_wood"</c>) of the item a requirement names — the identity
+        /// <see cref="CountHeldBySharedName"/> counts by — or null when the requirement has no
+        /// resolvable item. The prefab name stays the key storage and the planner share (Ruling 1);
+        /// this is the game-side identity of the same requirement, read the way
+        /// AdventureBackpacks' own requirement patch reads it.
+        /// </summary>
+        public static string SharedNameOf(Piece.Requirement requirement)
+        {
+            ItemDrop.ItemData data = ItemDataOf(requirement);
+            return data != null && data.m_shared != null ? data.m_shared.m_name : null;
+        }
+
+        /// <summary>
         /// An inventory's stacks as the pure view the merge predicate matches on, read exactly the way
         /// <c>Storage.DrawerSource</c> reads them: shared name, quality, world level, current size and
         /// stack size. Used by both halves of the availability question — as a delivery's destination
@@ -721,36 +727,45 @@ namespace CraftFromDrawersAndChests.Pull
         }
 
         /// <summary>
-        /// How many of a prefab the inventory holds, counted by <c>item.m_dropPrefab.name</c> — the
-        /// same prefab keying <see cref="IStorageSource.Count"/> uses (Ruling 1). Quality and world
-        /// level are ignored, which is the <b>one held notion</b> in this project: the same rule as the
-        /// shortfall's <see cref="HeldCounts"/> (which counts by shared name) and the same rule that
-        /// makes a held count a superset of what vanilla consumes. It answers the two questions that
-        /// are genuinely about the prefab — <c>HasAnyOfEach</c>'s "has any of this material" and the
-        /// crafting readout's available amount — and is deliberately <b>not</b> a shortfall count, which
-        /// <see cref="BuildShortfallRequests"/> owns. A stack whose drop prefab is unavailable
-        /// (materialised directly into the inventory) is not counted.
+        /// How many of an item the player's pool holds — <b>the one held count</b> this mod uses, for
+        /// the shortfall, the crafting and building readout and <c>HasAnyOfEach</c> alike.
+        /// <para>
+        /// It is the game's own <c>Inventory.CountItems(name, -1, false)</c> rather than a scan of our
+        /// own, and that is the point. The identity vanilla consumes by <i>is</i> this method, so
+        /// counting it makes "held" vanilla's notion <b>by construction</b> instead of a hand-rolled
+        /// superset. The two loose arguments are what make it a superset, and both were read from the
+        /// shipping assembly's IL rather than assumed: with quality <c>-1</c> the <c>m_quality</c>
+        /// compare is skipped outright, and with the third argument <c>false</c> the
+        /// <c>m_worldLevel</c> compare is too, so every same-name stack counts whatever its quality or
+        /// world level.
+        /// </para>
+        /// <para>
+        /// <b>AdventureBackpacks is why this is the right call.</b> AB postfixes this very method to
+        /// add the equipped backpack's contents — deducting from the backpack in place later, so
+        /// nothing has to enter the player's inventory — and it does so only while its
+        /// <c>CraftingContext</c> is open. It opens that scope in prefixes on
+        /// <c>Player.HaveRequirementItems</c>, both <c>Player.HaveRequirements</c> overloads,
+        /// <c>Player.UpdatePlacement</c>, <c>InventoryGui.DoCrafting</c> and
+        /// <c>InventoryGui.SetupRequirement</c> (verified in AB 2.3.4's source), which covers every
+        /// method this mod reads held inside. So a backpack's contents are counted here exactly when AB
+        /// will also pay from them, and never counted when it will not: a recipe can be satisfied from
+        /// the backpack without anything being pulled <i>out</i> of it, and this count can never
+        /// promise what the consume step cannot find.
+        /// </para>
+        /// <para>
+        /// Station feeding deliberately does not come through here: a fireplace, smelter or cooking
+        /// station takes its input out of <c>player.GetInventory()</c> alone, so an item in a backpack
+        /// is genuinely not available to it and must not count as held.
+        /// </para>
         /// </summary>
-        public static int CountHeld(Inventory inventory, string prefabName)
+        /// <param name="inventory">The player's own inventory — the one <c>Inventory</c> AB extends; may be null, which reads as none held.</param>
+        /// <param name="sharedName">The item's localized shared name (<c>"$item_wood"</c>); null or empty counts nothing.</param>
+        public static int CountHeldBySharedName(Inventory inventory, string sharedName)
         {
-            if (inventory == null || string.IsNullOrEmpty(prefabName))
+            if (inventory == null || string.IsNullOrEmpty(sharedName))
                 return 0;
 
-            List<ItemDrop.ItemData> items = inventory.GetAllItems();
-            if (items == null)
-                return 0;
-
-            int total = 0;
-            for (int i = 0; i < items.Count; i++)
-            {
-                ItemDrop.ItemData item = items[i];
-                if (item == null || item.m_dropPrefab == null)
-                    continue;
-
-                if (string.Equals(item.m_dropPrefab.name, prefabName, StringComparison.Ordinal))
-                    total += item.m_stack;
-            }
-            return total;
+            return inventory.CountItems(sharedName, -1, false);
         }
 
         /// <summary>

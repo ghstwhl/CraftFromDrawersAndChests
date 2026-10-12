@@ -315,9 +315,11 @@ namespace CraftFromDrawersAndChests.Patches
         }
 
         /// <summary>
-        /// Whether the player holds at least one of every required material, between their inventory
-        /// and storage — the <c>CanAlmostBuild</c> question. A material the player already carries one
-        /// of short-circuits; otherwise any source holding any of it is enough. A source that cannot
+        /// Whether the player holds at least one of every required material, between the pool the game
+        /// itself counts — their inventory, plus an equipped AdventureBackpacks backpack while a craft
+        /// or placement is being evaluated — and storage: the <c>CanAlmostBuild</c> question. A material
+        /// the player already carries one of short-circuits; otherwise any source holding any of it is
+        /// enough. A source that cannot
         /// be taken from synchronously (a chest another player owns) is not counted, so this agrees
         /// with what the pull could actually do.
         /// </summary>
@@ -341,7 +343,11 @@ namespace CraftFromDrawersAndChests.Patches
                 if (string.IsNullOrEmpty(prefab))
                     continue;
 
-                if (PullEngine.CountHeld(inventory, prefab) > 0)
+                // The player's own pool through the game's own count — the same notion the shortfall
+                // and the readout use, so the three can never disagree about what is held. It includes
+                // an equipped AdventureBackpacks backpack while a craft or placement is being
+                // evaluated, which is exactly when that mod will also pay from it.
+                if (PullEngine.CountHeldBySharedName(inventory, PullEngine.SharedNameOf(requirement)) > 0)
                     continue;
 
                 if (AnySourceHolds(sources, prefab))

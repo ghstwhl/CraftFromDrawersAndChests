@@ -13,11 +13,13 @@ namespace CraftFromDrawersAndChests.Logic
     /// and a chunk may be removed only when <see cref="CanDeliver"/> — which mirrors the delivery's
     /// own matching predicate, quality included — says it will be accepted.
     /// <para>
-    /// It also owns the two item identities of a shortfall: the <b>destination</b> one
-    /// (<see cref="IsSameItem"/>, name + quality + world level, the predicate
-    /// <c>Inventory.AddItem(ItemData)</c> merges on) and the deliberately looser <b>source</b> one
-    /// (<see cref="HeldAmount"/>, shared name alone). Keeping them apart is what makes the held count a
-    /// superset of what vanilla consumes, so a shortfall can never be inflated into a free craft.
+    /// It also owns the <b>destination</b> item identity of a shortfall —
+    /// <see cref="IsSameItem"/>, name + quality + world level, the predicate
+    /// <c>Inventory.AddItem(ItemData)</c> merges on. The <b>source</b> half, what the player already
+    /// holds, is deliberately looser and lives with the game-facing count instead: it is the game's own
+    /// <c>Inventory.CountItems</c> by shared name alone (<c>PullEngine.CountHeldBySharedName</c>),
+    /// which is a superset of what vanilla consumes, so a shortfall can never be inflated into a free
+    /// craft.
     /// </para>
     /// Lives in <c>Logic/</c> so these decisions are unit-testable without a live drawer or
     /// inventory; the game-facing code resolves the prefab, feeds these decisions the destination's
@@ -114,7 +116,8 @@ namespace CraftFromDrawersAndChests.Logic
         /// free space a delivery may use and the strict count of the item already present cannot
         /// disagree. The <b>source</b> half of the shortfall question deliberately does <b>not</b> use
         /// it: what the player already holds — and therefore what a pull may subtract — is counted by
-        /// shared name alone (<see cref="HeldAmount"/>), because quality is not the identity vanilla
+        /// shared name alone (the game's own <c>Inventory.CountItems</c>, see
+        /// <c>PullEngine.CountHeldBySharedName</c>), because quality is not the identity vanilla
         /// consumes by.
         /// </para>
         /// </summary>
@@ -170,13 +173,12 @@ namespace CraftFromDrawersAndChests.Logic
         /// of the destination's free-space measurement.
         /// <para>
         /// This is <b>not</b> the held count a pull subtracts from a requirement. That half must be a
-        /// superset of what vanilla consumes, so it is counted by shared name alone
-        /// (<see cref="HeldAmount"/>); calling this on the source half is exactly the regression Task
-        /// 14b fix round 2 removed — it counts zero for a same-name stack at a different quality or
-        /// world level, which inflates the shortfall to the whole requirement and lets the game create
-        /// an item nothing pays for. It is retained as the mirror of
-        /// <see cref="MatchingFreeStackSpace"/> and as the reference subset the source half's superset
-        /// property is proven against.
+        /// superset of what vanilla consumes, so it is the game's own count by shared name alone
+        /// (<c>PullEngine.CountHeldBySharedName</c>); calling this on the source half is exactly the
+        /// regression Task 14b fix round 2 removed — it counts zero for a same-name stack at a
+        /// different quality or world level, which inflates the shortfall to the whole requirement and
+        /// lets the game create an item nothing pays for. It is retained as the mirror of
+        /// <see cref="MatchingFreeStackSpace"/>.
         /// </para>
         /// </summary>
         /// <param name="name">The item's shared name; null or empty counts nothing.</param>
@@ -192,48 +194,6 @@ namespace CraftFromDrawersAndChests.Logic
             foreach (InventoryStack stack in stacks)
             {
                 if (!IsSameItem(stack, name, quality, worldLevel))
-                    continue;
-
-                held += stack.Stack;
-            }
-            return held;
-        }
-
-        /// <summary>
-        /// How many of an item the inventory already holds — the <b>source</b> half of the shortfall
-        /// question — counted by <b>shared name alone</b>: every stack of the same name, whatever its
-        /// quality or world level.
-        /// <para>
-        /// The looseness is load-bearing. A pull plans <c>GetAmount - held</c>, so the safety chain
-        /// <i>vanilla returned true ⇒ our shortfall is 0 ⇒ nothing is requested ⇒ the consume prefix
-        /// cannot decline</i> holds only while this count is at least vanilla's. Vanilla consumes a
-        /// requirement through <c>Inventory.RemoveItem(String, Int32, Int32, Boolean)</c>, keyed by the
-        /// <b>shared name</b> rather than an <c>ItemData</c>, and its own requirement test counts with
-        /// quality <c>-1</c> (= any) via <c>Inventory.CountItems(String, Int32, Boolean)</c>: quality is
-        /// not part of what vanilla will eat, and a same-name stack at a different quality <b>is</b>
-        /// removable. Counting by name alone therefore makes this a <b>superset</b> of the amount
-        /// vanilla will consume, so a shortfall can never be inflated past what vanilla would truly
-        /// take.
-        /// </para>
-        /// <para>
-        /// Over-counting held can only ask storage for <i>less</i> — any remainder is paid from the
-        /// player's own inventory by vanilla's own consume, the safe and recoverable direction —
-        /// whereas under-counting is what hands out a free craft or placement.
-        /// <c>Tests/Logic/HeldAmountTests.cs</c> pins the superset invariant over generated
-        /// inventories.
-        /// </para>
-        /// </summary>
-        /// <param name="name">The item's shared name; null or empty counts nothing.</param>
-        /// <param name="stacks">The inventory's stacks; null counts nothing.</param>
-        public static int HeldAmount(string name, IEnumerable<InventoryStack> stacks)
-        {
-            if (stacks == null || string.IsNullOrEmpty(name))
-                return 0;
-
-            int held = 0;
-            foreach (InventoryStack stack in stacks)
-            {
-                if (!string.Equals(stack.Name, name, StringComparison.Ordinal))
                     continue;
 
                 held += stack.Stack;

@@ -4,6 +4,46 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.13] - 2026-10-13
+
+### Fixed
+
+- **Materials in an AdventureBackpacks backpack now count, so a recipe that needs them is offered and
+  craftable.** Reported from play: a cauldron recipe wanting one Boar Meat read `0/1` and could not be
+  crafted with all 25 in the backpack, and the forge ignored backpack contents too. The mod counted
+  "held" by scanning `Player.m_inventory` itself, which cannot see the backpack — that is a *separate*
+  `Inventory` — so the requirement gate concluded the player had nothing and refused the craft, while
+  the crafting readout overwrote AdventureBackpacks' own number with its own.
+- "Held" is now the game's own `Inventory.CountItems(name, -1, false)`, at every place it is read: the
+  shortfall a pull plans for, the crafting and building readout, and `HasAnyOfEach`'s "has any of this
+  material". AdventureBackpacks postfixes that very method to add the equipped backpack's contents, and
+  does so only while its craft scope is open — which covers every method this mod reads held inside — so
+  a backpack item is counted exactly when that mod will also pay with it, and never counted when it will
+  not. Nothing is pulled *out* of the backpack into the player's inventory.
+- Counting the game's own method also makes "held" a superset of what vanilla consumes **by
+  construction** rather than by a hand-rolled scan, which is the invariant that keeps a craft from ever
+  costing nothing. The pure `DrawerTake.HeldAmount` rule and its fixture went with it: one held notion
+  rather than two.
+
+### Added
+
+- **Each requirement's readout is logged once per distinct answer** while `Debug` is on, and an
+  unanswered requirement lists every in-range source with its kind, its distance, the count it reported
+  for the prefab, and — for a drawer — the raw prefab string and amount its ZDO actually holds. A
+  drawer storing an item under a *different* prefab string than a requirement names is otherwise
+  indistinguishable from one that is out of range or switched off, and neither half of that comparison
+  is visible in the game's own UI.
+
+### Notes
+
+- **Holding `Left alt` with the crafting or build panel open deliberately blanks storage from the
+  readout.** That is the `Prevent mod key`, a CraftFromContainers port whose default is `left alt`: with
+  it held this mod does not count storage at all, so the panel shows AdventureBackpacks' own number —
+  the backpack counts and drawers and chests do not. Rebind or clear that key to change it.
+- Station feeding still counts the player's inventory only, deliberately: a fireplace, smelter or
+  cooking station takes its input out of `player.GetInventory()` alone, so an item in a backpack is
+  genuinely not available to it.
+
 ## [0.1.12] - 2026-10-13
 
 ### Fixed

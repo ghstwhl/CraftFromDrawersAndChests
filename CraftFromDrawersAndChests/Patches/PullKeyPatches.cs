@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text;
 using BepInEx.Logging;
 using CraftFromDrawersAndChests.Logic;
 using CraftFromDrawersAndChests.Pull;
@@ -58,6 +59,13 @@ namespace CraftFromDrawersAndChests.Patches
 
         /// <summary>The prevent-gate state the last <c>InventoryGui.Update</c> prefix observed, so a flip can be noticed.</summary>
         private static bool lastAllowed = true;
+
+        /// <summary>
+        /// The last readout line logged per requirement prefab, so the debug log carries each distinct
+        /// answer once rather than once per frame (see <see cref="LogReadout"/>).
+        /// </summary>
+        private static readonly Dictionary<string, string> readoutLogged =
+            new Dictionary<string, string>(System.StringComparer.Ordinal);
 
         /// <summary>
         /// <c>Player.m_placementStatus</c>, the private placement status the game rewrites each frame.
@@ -228,11 +236,14 @@ namespace CraftFromDrawersAndChests.Patches
         /// Rewrites a requirement's amount text to the configured resource string and flashes it
         /// while storage covers it, so the player can see that the recipe is reachable from chests
         /// and drawers rather than only from their own inventory. The available amount counts the
-        /// player's inventory first and only then the eligible sources, and only sources a pull could
-        /// actually take from synchronously; storage is scanned only when the player is short, as
-        /// CraftFromContainers does. The colour alternates between the flash colours only when
-        /// storage is what closes the gap — a recipe the player already covers keeps vanilla's colour
-        /// — but the readout text is written either way.
+        /// player's own pool through the game's own count — which <b>AdventureBackpacks</b> extends to
+        /// include an equipped backpack while a craft is being evaluated, so materials sitting in the
+        /// backpack read as available here and in the gate alike
+        /// (<see cref="PullEngine.CountHeldBySharedName"/>) — and then the eligible sources, and only
+        /// sources a pull could actually take from synchronously; storage is scanned only when the
+        /// player is short, as CraftFromContainers does. The colour alternates between the flash
+        /// colours only when storage is what closes the gap — a recipe the player already covers keeps
+        /// vanilla's colour — but the readout text is written either way.
         /// </summary>
         [HarmonyPatch(typeof(InventoryGui), "SetupRequirement")]
         [HarmonyPostfix]
@@ -250,7 +261,8 @@ namespace CraftFromDrawersAndChests.Patches
                 return;
 
             string prefab = PullEngine.PrefabName(req);
-            if (string.IsNullOrEmpty(prefab))
+            string sharedName = PullEngine.SharedNameOf(req);
+            if (string.IsNullOrEmpty(prefab) || string.IsNullOrEmpty(sharedName))
                 return;
 
             int amount = req.GetAmount(quality) * craftMultiplier;
@@ -261,23 +273,31 @@ namespace CraftFromDrawersAndChests.Patches
             if (inventory == null)
                 return;
 
-            // The player's own count first; storage is added only when the player is short, exactly as
-            // CraftFromContainers does, so a recipe the player can already pay for is not rescanned.
-            int available = PullEngine.CountHeld(inventory, prefab);
-            bool playerShort = available < amount;
+            // The player's own pool first — counted by the game itself, which counts an equipped
+            // AdventureBackpacks backpack too while AdventureBackpacks' craft scope is open, and which
+            // is the same count the shortfall and the requirement gates read — then storage only when
+            // the player is short, exactly as CraftFromContainers does so a recipe the player can
+            // already pay for is not rescanned.
+            int held = PullEngine.CountHeldBySharedName(inventory, sharedName);
+            int fromStorage = 0;
+            IReadOnlyList<IStorageSource> sources = null;
+            bool playerShort = held < amount;
             if (playerShort)
             {
                 Vec3 origin = PullEngine.OriginOf(player);
-                IReadOnlyList<IStorageSource> sources = PullEngine.Collect(origin, flags);
+                sources = PullEngine.Collect(origin, flags);
                 for (int i = 0; i < sources.Count; i++)
                 {
                     IStorageSource source = sources[i];
                     if (source == null || !source.IsValid || !PullEngine.CanServeSynchronously(source))
                         continue;
 
-                    available += source.Count(prefab);
+                    fromStorage += source.Count(prefab);
                 }
             }
+
+            int available = held + fromStorage;
+            LogReadout(flags, prefab, sharedName, amount, held, fromStorage, sources, player);
 
             Transform amountTransform = elementRoot.Find(ResAmountChild);
             if (amountTransform == null)
@@ -293,6 +313,67 @@ namespace CraftFromDrawersAndChests.Patches
                 text.color = Mathf.Sin(Time.time * 10f) > 0f ? PluginConfig.FlashColor : PluginConfig.UnFlashColor;
 
             text.text = PullKeyRules.ResourceAmountText(flags.ResourceString, available, amount);
+        }
+
+        /// <summary>
+        /// Logs what the crafting or building readout counted, once per distinct answer, so that "the
+        /// panel says I do not have it, but it is in a drawer" can be answered from a player's own log
+        /// instead of guessed at. Debug-only, and silent while the numbers do not change.
+        /// <para>
+        /// When a requirement is neither carried nor found in storage, every in-range source is named
+        /// with its kind, its whole-metre distance, what it reported for this prefab and whether its
+        /// per-storage switch is off — and, for a drawer, the raw prefab string and amount its ZDO
+        /// holds. That last pair is the only place both halves of a mismatch can be seen at once: a
+        /// drawer storing its item under a different prefab string than a requirement names looks
+        /// exactly like a drawer that is out of range or switched off, and none of those is visible in
+        /// the game's own UI.
+        /// </para>
+        /// </summary>
+        private static void LogReadout(
+            FeatureFlags flags, string prefab, string sharedName, int amount, int held, int fromStorage,
+            IReadOnlyList<IStorageSource> sources, Player player)
+        {
+            if (flags == null || !flags.IsDebug)
+                return;
+
+            var report = new StringBuilder();
+            report.Append("Readout '").Append(prefab).Append("' (").Append(sharedName)
+                  .Append("): held ").Append(held).Append(" + storage ").Append(fromStorage)
+                  .Append(" of ").Append(amount).Append(" required");
+
+            // Only an unanswered requirement has anything to explain, and naming the sources keeps the
+            // ordinary case down to one line.
+            if (held < amount && fromStorage == 0 && sources != null)
+            {
+                Vec3 origin = PullEngine.OriginOf(player);
+                report.Append(" | nothing holds it; ").Append(sources.Count).Append(" source(s) in range:");
+                for (int i = 0; i < sources.Count; i++)
+                {
+                    IStorageSource source = sources[i];
+                    if (source == null || !source.IsValid)
+                        continue;
+
+                    report.Append(" [").Append(source.Kind).Append(' ').Append(source.ObjectName)
+                          .Append(' ').Append(Mathf.RoundToInt(source.Position.DistanceTo(origin))).Append("m");
+                    if (source.ToggledOff)
+                        report.Append(" OFF");
+
+                    report.Append(" count=").Append(source.Count(prefab));
+
+                    DrawerSource drawer = source as DrawerSource;
+                    if (drawer != null && drawer.TryReadRaw(out string storedPrefab, out int storedAmount, out bool _))
+                        report.Append(" zdo='").Append(storedPrefab).Append("'x").Append(storedAmount);
+
+                    report.Append(']');
+                }
+            }
+
+            string line = report.ToString();
+            if (readoutLogged.TryGetValue(prefab, out string previous) && previous == line)
+                return;
+
+            readoutLogged[prefab] = line;
+            Log.LogInfo(line);
         }
 
         /// <summary>
