@@ -4,6 +4,32 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.12] - 2026-10-13
+
+### Fixed
+
+- **A single-item feed printed the game's "you don't have any …" message even though the item was fed.**
+  0.1.11's per-unit confirmation compared the station's remaining capacity against *this call's* unit
+  bound — `1` on the single-item path, the whole capacity on the fill path — so on `E` any station with
+  room at all read as "did not take it". The feed then reported nothing fed, the patch left the
+  interaction to vanilla, and vanilla printed its own message (`$msg_outof` for a fire,
+  `$msg_donthaveany` / `$msg_noprocessableitems` for a smelter) **after** the item had already arrived.
+  That is exactly why the fill path looked correct and `E` did not: there the bound happened to equal
+  the capacity. The check now reads the station's capacity before the unit and requires it to fall.
+
+### Added
+
+- **A fireplace's hover now names the fill key**, e.g. `[left shift+E] Add`, so a fire says how to fill
+  it. CraftFromContainers adds this hint to the smelter's two hovers only, which left a fire with no way
+  to discover the key. All three hovers go through one helper and use the game's own "Add" token, so
+  they read alike.
+
+### Notes
+
+- The smelter's two hints still read "Add max item" for ore and "Add max" for fuel. That difference is
+  CraftFromContainers', and the wording is the game's own (`m_addOreTooltip` for ore, the
+  `$piece_smelter_add` token for fuel), so it is kept rather than smoothed over.
+
 ## [0.1.11] - 2026-10-13
 
 ### Changed

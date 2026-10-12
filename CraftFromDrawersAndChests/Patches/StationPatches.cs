@@ -886,17 +886,23 @@ namespace CraftFromDrawersAndChests.Patches
                     break;
                 }
 
+                // The station's own remaining capacity before this unit, so the check below compares like
+                // with like. Comparing it against maxUnits was the bug: maxUnits is this call's unit
+                // bound (1 on the single-item path), not a capacity, so a station with any room at all
+                // read as "did not take it" - and the interaction was then left to vanilla, which printed
+                // its own "you don't have any X" message after the item had already been fed.
+                int stationBefore = remainingNow != null ? remainingNow() : -1;
+
                 nview.InvokeRPC(rpcName, StationRpcArgs(rpcName, prefab, cheated));
 
                 // Confirm the station took it BEFORE removing another unit. A removal whose RPC does not
                 // land destroys an item, and losing a hundred of them silently would be far worse than
                 // the failure itself; checked per unit, the most this can ever cost is one. A station
-                // gains exactly one unit of capacity per unit fed, so the remaining count must fall by
-                // one here.
-                if (remainingNow != null)
+                // gains exactly one unit of capacity per unit fed, so its remaining count must fall.
+                if (stationBefore >= 0)
                 {
-                    int nowRemaining = remainingNow();
-                    if (nowRemaining >= 0 && nowRemaining > maxUnits - fed - 1)
+                    int stationAfter = remainingNow();
+                    if (stationAfter >= 0 && stationAfter >= stationBefore)
                     {
                         Log.LogError(ModInfo.ModName + ": the station did not take a fed '" + prefab +
                                      "' (its remaining capacity did not fall), so the feed has stopped " +
@@ -1099,16 +1105,38 @@ namespace CraftFromDrawersAndChests.Patches
         }
 
         /// <summary>
+        /// The hover-hint action word for adding fuel: the game's own smelter token, whose text is the
+        /// word "Add" — the shipping assembly uses it in a hover hint of exactly this shape, so it reads
+        /// correctly on a fire too. A fireplace has no hover token of its own, and this is the word
+        /// CraftFromContainers uses for a smelter's fuel hint, so the two hovers read alike.
+        /// </summary>
+        private const string AddFuelHintToken = "$piece_smelter_add";
+
+        /// <summary>
         /// Appends the fill-all hint to the smelter's fuel hover. Mirrors CraftFromContainers 4.0.7's
         /// <c>Smelter_OnHoverAddFuel_Patch</c> (CFC lines 429-440): the same mod-enabled and
         /// <c>pullFuel</c> gates, the same "only when the modifier is bound" check, and the same
-        /// localized <c>[key+Use] … max</c> suffix — with CFC's hard-coded <c>$piece_smelter_add</c>.
+        /// localized <c>[key+Use] … max</c> suffix — with CFC's <c>$piece_smelter_add</c> action word,
+        /// now shared with the fireplace hint below through <see cref="AddFuelHintToken"/>.
         /// </summary>
         [HarmonyPatch(typeof(Smelter), "OnHoverAddFuel")]
         [HarmonyPostfix]
         private static void SmelterOnHoverAddFuelPostfix(ref string __result)
         {
-            AppendFillAllHint(ref __result, "$piece_smelter_add", PullSetting.Fuel);
+            AppendFillAllHint(ref __result, AddFuelHintToken, PullSetting.Fuel);
+        }
+
+        /// <summary>
+        /// Appends the fill-all hint to a fireplace's hover text, so a fire says how to fill it.
+        /// CraftFromContainers puts this hint on the smelter's two hovers only (CFC lines 431 and 446),
+        /// which left a fire with no way to discover the key — reported from play. It goes through the
+        /// same helper and the same action word as the smelter's fuel hint, so the two cannot drift.
+        /// </summary>
+        [HarmonyPatch(typeof(Fireplace), "GetHoverText")]
+        [HarmonyPostfix]
+        private static void FireplaceGetHoverTextPostfix(Fireplace __instance, ref string __result)
+        {
+            AppendFillAllHint(ref __result, AddFuelHintToken, PullSetting.Fuel);
         }
 
         /// <summary>
