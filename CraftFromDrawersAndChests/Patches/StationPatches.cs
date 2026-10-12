@@ -326,7 +326,8 @@ namespace CraftFromDrawersAndChests.Patches
             Vector3 origin = __instance.transform.position;
             int fed = FeedStation(player, inventory, ___m_nview, flags,
                 StationFeedRules.FillAmount(fillAll, remaining), AddFuelRpc,
-                wanted => PullFromStorage(player, origin, prefab, fuelItem, flags, wanted, fillAll) ? prefab : null);
+                wanted => PullFromStorage(player, origin, prefab, fuelItem, flags, wanted, fillAll) ? prefab : null,
+                () => FuelRemaining(__instance, () => zdo != null ? zdo.GetFloat(ZDOVars.s_fuel, 0f) : 0f));
             return fed <= 0;
         }
 
@@ -401,7 +402,8 @@ namespace CraftFromDrawersAndChests.Patches
                         return null;
 
                     return FirstInputInInventory(inventory, inputs);
-                });
+                },
+                () => QueueRemaining(__instance));
 
             // Swallow the interaction once anything was queued so vanilla does not add a second item,
             // but report it as handled - the value CraftFromContainers sets (CFC line 569).
@@ -497,7 +499,8 @@ namespace CraftFromDrawersAndChests.Patches
             Vector3 origin = __instance.transform.position;
             int fed = FeedStation(player, inventory, ___m_nview, flags,
                 StationFeedRules.FillAmount(fillAll, remaining), AddFuelRpc,
-                wanted => PullFromStorage(player, origin, prefab, fuelItem, flags, wanted, fillAll) ? prefab : null);
+                wanted => PullFromStorage(player, origin, prefab, fuelItem, flags, wanted, fillAll) ? prefab : null,
+                () => SmelterFuelRemaining(__instance));
 
             // Swallow the interaction once anything was fed so vanilla does not add a second item, but
             // report it as handled - the value CraftFromContainers sets (CFC line 592).
@@ -556,12 +559,61 @@ namespace CraftFromDrawersAndChests.Patches
             // into the fire rather than left in the inventory (Task 15c), as CFC does (CFC line 376).
             Vector3 origin = __instance.transform.position;
             int fed = FeedStation(player, inventory, ___m_nview, flags, 1, AddFuelRpc,
-                wanted => PullFromStorage(player, origin, prefab, fuelItem, flags, wanted, false) ? prefab : null);
+                wanted => PullFromStorage(player, origin, prefab, fuelItem, flags, wanted, false) ? prefab : null,
+                () => CookingFuelRemaining(__instance));
 
             if (fed > 0)
                 __result = true;
 
             return fed <= 0;
+        }
+
+        /// <summary>
+        /// A fireplace's remaining fuel capacity, or a negative number when it cannot be read. The fuel
+        /// is a float on the fireplace's own ZDO, so it is read the same way the request amount is.
+        /// </summary>
+        private static int FuelRemaining(Fireplace fireplace, Func<float> readFuel)
+        {
+            if (fireplace == null || readFuel == null)
+                return -1;
+
+            return StationFeedRules.RemainingFuelCapacity(fireplace.m_maxFuel, readFuel());
+        }
+
+        /// <summary>
+        /// A smelter's remaining ore-queue capacity, or a negative number when the private getter cannot
+        /// be invoked. Reads the same reflected member the request amount uses.
+        /// </summary>
+        private static int QueueRemaining(Smelter smelter)
+        {
+            if (smelter == null || !TryInvokeInt(SmelterGetQueueSize, smelter, out int queueSize))
+                return -1;
+
+            return StationFeedRules.RemainingCapacity(smelter.m_maxOre, queueSize);
+        }
+
+        /// <summary>
+        /// A smelter's remaining fuel capacity, or a negative number when the private getter cannot be
+        /// invoked. Reads the same reflected member the request amount uses, so the two cannot disagree.
+        /// </summary>
+        private static int SmelterFuelRemaining(Smelter smelter)
+        {
+            if (smelter == null || !TryInvokeFloat(SmelterGetFuel, smelter, out float fuel))
+                return -1;
+
+            return StationFeedRules.RemainingFuelCapacity(smelter.m_maxFuel, fuel);
+        }
+
+        /// <summary>
+        /// A cooking station's remaining fuel capacity, or a negative number when the private getter
+        /// cannot be invoked.
+        /// </summary>
+        private static int CookingFuelRemaining(CookingStation station)
+        {
+            if (station == null || !TryInvokeFloat(CookingStationGetFuel, station, out float fuel))
+                return -1;
+
+            return StationFeedRules.RemainingFuelCapacity(station.m_maxFuel, fuel);
         }
 
         /// <summary>
@@ -753,7 +805,7 @@ namespace CraftFromDrawersAndChests.Patches
         /// </param>
         private static int FeedStation(
             Player player, Inventory inventory, ZNetView nview, FeatureFlags flags,
-            int remaining, string rpcName, Func<int, string> pullOneBatch)
+            int remaining, string rpcName, Func<int, string> pullOneBatch, Func<int> remainingNow)
         {
             if (player == null || inventory == null || nview == null || flags == null || remaining <= 0 ||
                 pullOneBatch == null)
@@ -766,7 +818,8 @@ namespace CraftFromDrawersAndChests.Patches
                 if (prefab == null)
                     break;
 
-                int fed = FeedStationFromInventory(inventory, nview, prefab, remaining - fedTotal, rpcName);
+                int fed = FeedStationFromInventory(
+                    inventory, nview, prefab, remaining - fedTotal, rpcName, remainingNow);
                 if (fed <= 0)
                     break;
 
@@ -789,8 +842,13 @@ namespace CraftFromDrawersAndChests.Patches
         /// shapes are CFC's.
         /// </para>
         /// </summary>
+        /// <param name="remainingNow">
+        /// Reads the station's remaining capacity again, or returns a negative number when it cannot be
+        /// read. Used to confirm each unit actually reached the station before another is removed.
+        /// </param>
         private static int FeedStationFromInventory(
-            Inventory inventory, ZNetView nview, string prefab, int maxUnits, string rpcName)
+            Inventory inventory, ZNetView nview, string prefab, int maxUnits, string rpcName,
+            Func<int> remainingNow)
         {
             if (inventory == null || nview == null || string.IsNullOrEmpty(prefab) || maxUnits <= 0)
                 return 0;
@@ -829,6 +887,25 @@ namespace CraftFromDrawersAndChests.Patches
                 }
 
                 nview.InvokeRPC(rpcName, StationRpcArgs(rpcName, prefab, cheated));
+
+                // Confirm the station took it BEFORE removing another unit. A removal whose RPC does not
+                // land destroys an item, and losing a hundred of them silently would be far worse than
+                // the failure itself; checked per unit, the most this can ever cost is one. A station
+                // gains exactly one unit of capacity per unit fed, so the remaining count must fall by
+                // one here.
+                if (remainingNow != null)
+                {
+                    int nowRemaining = remainingNow();
+                    if (nowRemaining >= 0 && nowRemaining > maxUnits - fed - 1)
+                    {
+                        Log.LogError(ModInfo.ModName + ": the station did not take a fed '" + prefab +
+                                     "' (its remaining capacity did not fall), so the feed has stopped " +
+                                     "after losing at most one unit rather than continuing to remove items " +
+                                     "that are not arriving.");
+                        break;
+                    }
+                }
+
                 fed++;
             }
 

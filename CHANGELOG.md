@@ -4,6 +4,23 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11] - 2026-10-13
+
+### Changed
+
+- **The player's inventory is the station feed's staging area, by the owner's decision.** Using it as a
+  pass-thru is acceptable provided nothing extra is left in it, and nothing is: a take is capped by the
+  inventory's own free room, so it can never over-take; every unit taken is fed to the station in the
+  same interaction, so the net inventory is unchanged; and with no room at all nothing is taken and
+  nothing is fed. A full inventory therefore stops a station being fed — accepted over giving the mod a
+  staging inventory of its own, which risked stranding items outside any inventory.
+- The feed now confirms each unit **actually reached the station** before removing another, by re-reading
+  the station's remaining capacity (a station gains exactly one unit of capacity per unit fed). The
+  order — remove, then invoke the station's add RPC — means an RPC that does not land destroys an item,
+  and losing a whole batch silently would be far worse than the failure itself. Checked per unit, the
+  most a broken feed can cost is one, and it logs an error naming the item instead of doing nothing
+  visible.
+
 ## [0.1.10] - 2026-10-12
 
 ### Fixed
