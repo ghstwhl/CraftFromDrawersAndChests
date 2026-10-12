@@ -107,6 +107,22 @@ this mod entirely while it is held, so only your inventory is used.
 **A pull did not deliver everything.** Delivery goes into your inventory, so it needs room there: a
 matching free stack, or an empty slot for an item that does not stack (such as a Dvergr lantern).
 
+## Bugs and feature requests
+
+**Both belong in the issue tracker:** <https://github.com/ghstwhl/CraftFromDrawersAndChests/issues>.
+
+A report that can be acted on usually carries:
+
+- the version this mod loaded as, which `BepInEx\LogOutput.log` states on startup;
+- that log, or at least the part of it around the problem — it is where any diagnosis starts;
+- whether you are playing alone or on a server, and if on a server whether you are the host or a
+  client;
+- the versions of the rest of the chain: **MultiUserChest** (required), and **KG Item Drawers** and
+  **Adventure Backpacks** (both optional).
+
+A fault in another mod belongs on that mod's own tracker rather than here — Item Drawers' hotkeys and
+hover text, for instance, are not ours to change.
+
 ## Building from source
 
 Build and packaging tooling lives under [`tools/`](tools/README.md); the local reference
