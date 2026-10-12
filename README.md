@@ -6,6 +6,8 @@ the build hammer and the crafting menu pull their materials from every **chest**
 
 In short: CraftFromContainers, but for drawers too.
 
+**Install from Thunderstore:** <https://thunderstore.io/c/valheim/p/NorCal_Nerds/CraftFromDrawersAndChests/>
+
 ## Features
 
 - **Craft from storage.** When you craft, the required materials are pulled from nearby
@@ -57,6 +59,11 @@ either is installed. Remove them from `BepInEx\plugins` (or your mod-manager pro
 restart before installing this mod.
 
 ## Installation
+
+**From Thunderstore — recommended:** <https://thunderstore.io/c/valheim/p/NorCal_Nerds/CraftFromDrawersAndChests/>.
+Install it with your mod manager, or download the zip and extract it into `BepInEx\plugins`.
+
+**By hand:**
 
 1. Install **BepInExPack_Valheim** (BepInEx 5.4.2350) into your Valheim folder.
 2. Drop `CraftFromDrawersAndChests.dll` into `BepInEx\plugins`.
