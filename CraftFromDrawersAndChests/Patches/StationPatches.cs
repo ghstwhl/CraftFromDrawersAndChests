@@ -27,10 +27,15 @@ namespace CraftFromDrawersAndChests.Patches
     /// </para>
     /// <para>
     /// <b>The pull is the mod's existing one, unchanged.</b> Each patch makes one call to
-    /// <see cref="PullEngine.PullToInventory"/> — the same shortfall planner, the same source
-    /// collection, the same all-or-nothing take sequencing and the same destination-capacity proof
-    /// the crafting, building and ctrl-click pulls use — asking for a single item whose destination
-    /// is the <i>interacting player's</i> inventory. Nothing here re-implements any of that. A
+    /// <see cref="PullEngine.PullToInventory"/> — the same source collection, the same all-or-nothing
+    /// take sequencing and the same destination-capacity proof the crafting, building and ctrl-click
+    /// pulls use — asking for a single item whose destination is the <i>interacting player's</i>
+    /// inventory. Nothing here re-implements any of that. It is the
+    /// <see cref="RequestBasis.Shortfall"/> basis, so storage is asked only for what the destination
+    /// does not already hold: an interaction never takes a second item for something the player is
+    /// already carrying. (The deliberate fetch — the ctrl-click pull and the pull-key build press —
+    /// deliberately asks for the whole cost instead, so that repeating it supplies materials again; see
+    /// <see cref="PullEngine.PullToPlayer"/>.) A
     /// station is not an <c>Inventory</c> (see the remarks on <see cref="PullEngine.PullToInventory"/>'s
     /// callers below), and vanilla consumes the station's fuel, ore, food and ammo <b>out of the
     /// player's inventory</b>, so delivering there and then letting vanilla run is both the only

@@ -23,11 +23,19 @@ namespace CraftFromDrawersAndChests.Pull
     /// prefab name of a requirement is the GameObject name behind its <c>m_resItem</c>.
     /// </para>
     /// <para>
-    /// <b>Shortfall.</b> A pull for crafting or building supplies only what the player is <i>short</i>
-    /// of, not the whole requirement: a player who already carries the item must not have it taken
-    /// from storage in its place, and planning the full requirement would make an otherwise-craftable
-    /// recipe infeasible whenever storage held less than the total (see
-    /// <see cref="BuildRequests(Piece.Requirement[], int, int, Func{string, int})"/>).
+    /// <b>Two request bases, by intent.</b> What storage is asked for depends on why it is being
+    /// asked (<see cref="RequestBasis"/>). The <b>crafting and placement</b> pull asks only for the
+    /// <i>shortfall</i> below what the player carries: a player who already holds the item must not
+    /// have it taken from storage in its place, and planning the whole requirement there would make
+    /// an otherwise-craftable recipe infeasible whenever storage held less than the total (see
+    /// <see cref="BuildShortfallRequests"/>). The <b>deliberate fetch</b> — the ctrl-click pull and
+    /// the pull-key build press — asks for the <i>whole cost</i> however much the player carries
+    /// (<see cref="BuildFullRequests"/>), which is CraftFromContainers' own rule and the only thing
+    /// that makes a fetch repeatable: asking for the shortfall meant a second pull for the same recipe
+    /// supplied nothing, so a player could not fetch materials for a second portal. Asking for the
+    /// whole cost is safe on the fetch path and not on the craft path because the fetch is planned as
+    /// a <b>fill</b> — it takes what storage has and what the inventory accepts instead of discarding
+    /// the plan (see <see cref="PullToInventoryCore"/>).
     /// </para>
     /// </summary>
     public static class PullEngine
@@ -93,12 +101,11 @@ namespace CraftFromDrawersAndChests.Pull
         /// <c>-1</c> — so the shortfall it produces can never be inflated past what vanilla would truly
         /// take. A requirement the player already covers produces no request at all.
         /// <para>
-        /// This is the entry point the crafting and building pulls (and their requirement gates) share.
-        /// It deliberately diverges from CraftFromContainers, which asks storage for the whole
-        /// requirement with no held-subtraction (CFC line 1175, <c>GetAmount(qualityLevel) * multiple</c>)
-        /// and therefore over-pulls; asking only for the shortfall is the safe direction and matches
-        /// this project's own gate, whose whole purpose is that a "yes" means the pull can deliver what
-        /// the action needs.
+        /// This is the entry point the crafting and placement pulls share with their requirement gates
+        /// (<see cref="PlanFor"/>). <see cref="BuildFullRequests"/> is the fetch basis —
+        /// CraftFromContainers' whole-cost rule — and the two are deliberately different, because the
+        /// gate answers "can this action be paid for?" while a fetch answers "give me these
+        /// materials". See <see cref="RequestBasis"/> for why both exist.
         /// </para>
         /// </summary>
         /// <param name="requirements">The recipe's or piece's requirements; may be null.</param>
@@ -110,7 +117,33 @@ namespace CraftFromDrawersAndChests.Pull
         {
             IReadOnlyDictionary<string, int> held = HeldCounts(requirements, inventory);
             return BuildRequests(requirements, qualityLevel, multiplier,
-                name => held.TryGetValue(name, out int amount) ? amount : 0);
+                name => held.TryGetValue(name, out int amount) ? amount : 0,
+                RequestBasis.Shortfall);
+        }
+
+        /// <summary>
+        /// Turns requirements into the planner's requests for a <b>deliberate fetch</b> — the ctrl-click
+        /// pull and the pull-key build press — asking for each requirement's whole cost
+        /// (<c>GetAmount(qualityLevel) * multiplier</c>) however much the player carries
+        /// (<see cref="RequestBasis.FullCost"/>).
+        /// <para>
+        /// This is CraftFromContainers' own rule: CFC 4.0.7's <c>PullResources</c> accumulates only what
+        /// it has itself taken from containers, never what the player holds (CFC line 1175), so every
+        /// press asks for the cost again. That is what makes a fetch repeatable — see
+        /// <see cref="PullMath.RequestAmount"/> for why the shortfall basis cannot be used here — and it
+        /// cannot over-pull into a dead end, because the fetch that uses it is planned as a
+        /// <b>fill</b>: storage contributes what it has, the amount is capped to what the destination
+        /// can accept, and neither an empty base nor a full inventory discards the whole action (see
+        /// <see cref="PullToInventoryCore"/>).
+        /// </para>
+        /// </summary>
+        /// <param name="requirements">The recipe's or piece's requirements; may be null.</param>
+        /// <param name="qualityLevel">The quality the requirement is evaluated at (0 or 1 for building).</param>
+        /// <param name="multiplier">How many of the recipe are being fetched (1 unless multicrafting).</param>
+        public static PullRequest[] BuildFullRequests(
+            Piece.Requirement[] requirements, int qualityLevel, int multiplier)
+        {
+            return BuildRequests(requirements, qualityLevel, multiplier, null, RequestBasis.FullCost);
         }
 
         /// <summary>
@@ -149,21 +182,22 @@ namespace CraftFromDrawersAndChests.Pull
         }
 
         /// <summary>
-        /// Turns requirements into the planner's requests, each reduced to the part the player does
-        /// not already hold. <paramref name="held"/> maps a prefab name to how many the player
-        /// currently carries; a requirement whose shortfall is zero produces no request, so the
-        /// player's own materials are consumed first and storage is asked only for the remainder.
-        /// A null <paramref name="held"/> simply reads as "carries none", which requests every
-        /// requirement in full; production callers always supply the shortfall count
-        /// (<see cref="BuildShortfallRequests"/>), so there is no longer a "pull the whole recipe"
-        /// path.
+        /// Turns requirements into the planner's requests, each one's amount decided by
+        /// <see cref="PullMath.RequestAmount"/> — the single definition of that rule, so the two bases
+        /// cannot drift apart. <paramref name="held"/> maps a prefab name to how many the player
+        /// currently carries, and is read only under <see cref="RequestBasis.Shortfall"/>, where a
+        /// requirement whose shortfall is zero produces no request so the player's own materials are
+        /// consumed first. Under <see cref="RequestBasis.FullCost"/> every requirement produces a
+        /// request for its whole cost and <paramref name="held"/> may be null.
         /// </summary>
         /// <param name="requirements">The recipe's or piece's requirements; may be null.</param>
         /// <param name="qualityLevel">The quality the requirement is evaluated at (0 or 1 for building).</param>
         /// <param name="multiplier">How many of the recipe are being made (1 for building).</param>
         /// <param name="held">Prefab name to amount the player already holds; null means "holds none".</param>
+        /// <param name="basis">Whether each request is the shortfall or the whole cost (see <see cref="RequestBasis"/>).</param>
         public static PullRequest[] BuildRequests(
-            Piece.Requirement[] requirements, int qualityLevel, int multiplier, Func<string, int> held)
+            Piece.Requirement[] requirements, int qualityLevel, int multiplier, Func<string, int> held,
+            RequestBasis basis)
         {
             if (requirements == null)
                 return Array.Empty<PullRequest>();
@@ -186,7 +220,7 @@ namespace CraftFromDrawersAndChests.Pull
                     continue;
 
                 int alreadyHeld = held != null ? held(prefab) : 0;
-                int amount = PullMath.Shortfall(needed, alreadyHeld);
+                int amount = PullMath.RequestAmount(needed, alreadyHeld, basis);
                 if (amount <= 0)
                     continue;
 
@@ -335,58 +369,66 @@ namespace CraftFromDrawersAndChests.Pull
 
         /// <summary>
         /// Pulls a recipe's or a building piece's materials into <paramref name="player"/>'s own
-        /// inventory — the "pull that instead of doing it" behaviour. Storage is asked only for the
-        /// <b>shortfall</b> below what the player already carries (see <see cref="PlanFor"/>): the very
-        /// notion the requirement gates use, so a pull can never demand an amount the gate did not
-        /// already promise storage could deliver. Asking for the whole requirement instead — as
-        /// CraftFromContainers does — would over-pull (taking an item the player already holds) and, on
-        /// this codebase's shortfall-based gate, could refuse a pull for materials the player is holding.
+        /// inventory — the "pull that instead of doing it" behaviour behind the ctrl-click pull and the
+        /// pull-key build press.
         /// <para>
-        /// Returns true when the pull completed <b>or</b> when there was nothing to fetch (the player
-        /// already holds every requirement, or there are no requirements at all), in which case
-        /// <paramref name="requested"/> is false so the caller reports nothing — a no-op pull has
-        /// neither a success nor a failure to announce. It returns false, having consumed nothing and
-        /// dropped nothing, when storage cannot cover the shortfall <b>or</b> when the player's
-        /// inventory cannot accept everything the pull would deliver. The destination check is what
-        /// keeps items off the ground — the design's top anti-goal (Review Focus 2): a pull that moved
-        /// items into a full inventory would leave the remainder on the floor, so the whole pull is
-        /// declined before a single item moves. The check reuses the very destination model the
-        /// crafting path uses (<see cref="DestinationAllows"/>), so the two cannot disagree.
+        /// <b>A fetch, not a top-up.</b> Storage is asked for each requirement's <b>whole cost</b>
+        /// however much the player already carries (<see cref="BuildFullRequests"/>, the
+        /// <see cref="RequestBasis.FullCost"/> basis), which is CraftFromContainers' own rule (CFC
+        /// 4.0.7's <c>PullResources</c> accumulates only what it has itself taken from containers). That
+        /// is what makes the fetch repeatable: pulling for a second portal, with the first portal's
+        /// materials already in the inventory, supplies the second portal's materials instead of nothing.
+        /// The shortfall basis is kept for the crafting and placement pull, where asking for the whole
+        /// cost would take an item the player already holds out of storage in its place.
+        /// </para>
+        /// <para>
+        /// The fetch is planned as a <b>fill</b>, so a base that can only partly cover the cost still
+        /// contributes the part it has, and the request is first capped to what the destination can
+        /// accept — the two rules that keep a fetch from being refused wholesale by a base or an
+        /// inventory that is merely short. Everything else is unchanged: the destination must still be
+        /// able to take every line before the first item moves, so nothing can reach the ground.
+        /// </para>
+        /// <para>
+        /// Returns true when the pull completed <b>or</b> when there was nothing to fetch (no
+        /// requirements at all, or no eligible stock for any of them), in which case
+        /// <paramref name="requested"/> is false and the caller decides what to say about the materials
+        /// the base did not supply. It returns false, having moved nothing, when the destination cannot
+        /// take the plan — see <see cref="DestinationAllows"/>.
         /// </para>
         /// </summary>
         /// <param name="requirements">The recipe's or piece's requirements; may be null, which has nothing to fetch.</param>
         /// <param name="qualityLevel">The quality the requirement is evaluated at (an upgrade is &gt; 1, building is 0).</param>
-        /// <param name="multiplier">How many are being pulled (1 unless multicrafting).</param>
+        /// <param name="multiplier">How many are being fetched (1 unless multicrafting).</param>
         /// <param name="player">The player to deliver into; null refuses.</param>
         /// <param name="flags">The resolved configuration snapshot; null refuses.</param>
         /// <param name="requested">
-        /// Whether the pull had anything to fetch. False means a no-op pull: nothing moved and there is
-        /// nothing to report, so the caller shows neither the pulled message nor a refusal reason.
+        /// Whether there were plan lines at all. False means no storage contributed: nothing moved, so
+        /// the caller must not report a success, and it reads the missing materials itself.
         /// </param>
         public static bool PullToPlayer(
             Piece.Requirement[] requirements, int qualityLevel, int multiplier, Player player, FeatureFlags flags,
             out bool requested)
         {
-            return PullToInventory(
+            return PullToInventoryCore(
                 requirements, qualityLevel, multiplier,
                 player != null ? player.GetInventory() : null, OriginOf(player), flags, AtUpgrader(player),
-                out requested);
+                RequestBasis.FullCost, true, out requested);
         }
 
         /// <summary>
-        /// The <see cref="Inventory"/>-taking form of <see cref="PullToPlayer"/>: pulls the shortfall of
+        /// The <see cref="Inventory"/>-taking form of the craft pull: pulls the <b>shortfall</b> of
         /// <paramref name="requirements"/> into any inventory, from storage within range of
         /// <paramref name="origin"/>. Station feeding uses it — the origin is the station's transform,
-        /// the destination is the inventory the station is then fed from — and the player-facing
-        /// ctrl-click and building pulls keep their own names and behaviour by delegating here.
+        /// the destination is the inventory the station is then fed from.
         /// <para>
-        /// All of <see cref="PullToPlayer"/>'s rules apply unchanged, because this <i>is</i> the
-        /// implementation it delegates to: storage is asked only for the shortfall below what the
-        /// destination already holds, the plan is proved whole before anything moves, and the
-        /// destination must be able to accept every line before the first item is taken — so nothing
-        /// can be pulled that cannot be delivered, and nothing can reach the ground. A no-op pull
-        /// (nothing to fetch) returns true with <paramref name="requested"/> false, so the caller
-        /// reports neither a success nor a failure.
+        /// This is the <see cref="RequestBasis.Shortfall"/> basis, and the strict all-or-nothing plan:
+        /// storage is asked only for what the destination does not already hold, the plan is proved
+        /// whole before anything moves, and the destination must be able to accept every line before the
+        /// first item is taken — so nothing can be pulled that cannot be delivered, and nothing can reach
+        /// the ground. The deliberate fetch (<see cref="PullToPlayer"/>) deliberately differs: it asks
+        /// for the whole cost and is planned as a fill, so that repeating it supplies materials again.
+        /// A no-op pull (nothing to fetch) returns true with <paramref name="requested"/> false, so the
+        /// caller reports neither a success nor a failure.
         /// </para>
         /// </summary>
         /// <param name="requirements">The recipe's or piece's requirements; may be null, which has nothing to fetch.</param>
@@ -404,7 +446,7 @@ namespace CraftFromDrawersAndChests.Pull
         {
             return PullToInventoryCore(
                 requirements, qualityLevel, multiplier, destination, origin, flags,
-                allowUpgraderResources, false, out requested);
+                allowUpgraderResources, RequestBasis.Shortfall, false, out requested);
         }
 
         /// <summary>
@@ -444,38 +486,44 @@ namespace CraftFromDrawersAndChests.Pull
         {
             return PullToInventoryCore(
                 requirements, qualityLevel, multiplier, destination, origin, flags,
-                allowUpgraderResources, true, out requested);
+                allowUpgraderResources, RequestBasis.Shortfall, true, out requested);
         }
 
         /// <summary>
-        /// The one implementation behind <see cref="PullToInventory"/> and
-        /// <see cref="PullToInventoryFill"/>: they differ only in whether the plan is all-or-nothing
-        /// or a fill, so everything else — the shortfall, the collection of sources, the destination
-        /// proof, the execution — is shared and cannot drift between the craft pull and the fill.
+        /// The one implementation behind the three public pulls: they differ only in the basis they ask
+        /// storage on and whether the plan is all-or-nothing or a fill (<see cref="RequestBasis"/>), so
+        /// everything else — the collection of sources, the destination cap for a fill, the destination
+        /// proof, the execution — is shared and cannot drift between the fetch and the craft pull.
         /// </summary>
         private static bool PullToInventoryCore(
             Piece.Requirement[] requirements, int qualityLevel, int multiplier,
             Inventory destination, Vec3 origin, FeatureFlags flags, bool allowUpgraderResources,
-            bool fillUpTo, out bool requested)
+            RequestBasis basis, bool fillUpTo, out bool requested)
         {
             requested = false;
             if (destination == null || flags == null)
                 return false;
 
-            // PlanFor is the single planning entry point: it collects the eligible sources once and
-            // asks storage only for the shortfall below what the destination carries. A fill's
-            // requests are first capped to what the destination can accept, so the fill is never
-            // declined by room it does not have (see CapToDestination).
+            // The eligible sources are collected once, and the requests are built on the basis the
+            // caller's intent needs: the shortfall for a craft or a station feed, the whole cost for a
+            // deliberate fetch (see RequestBasis). A fill's requests are then capped to what the
+            // destination can accept, so a fill is never declined by room it does not have (see
+            // CapToDestination).
             IReadOnlyList<IStorageSource> sources = Collect(origin, flags);
-            PullRequest[] requests = BuildShortfallRequests(requirements, qualityLevel, multiplier, destination);
+            PullRequest[] requests = basis == RequestBasis.FullCost
+                ? BuildFullRequests(requirements, qualityLevel, multiplier)
+                : BuildShortfallRequests(requirements, qualityLevel, multiplier, destination);
             if (fillUpTo)
                 requests = CapToDestination(requests, requirements, destination);
 
             PullPlanResult plan = Plan(requests, sources, origin, flags, allowUpgraderResources, fillUpTo);
 
-            // Nothing to fetch: no requirements at all, or the destination already holds every one of
-            // them. The pull is a no-op, so report nothing rather than a misleading success or room
-            // failure.
+            // Nothing to fetch. Under the shortfall basis that means no requirements at all, or a
+            // destination that already holds every one of them; under the fetch basis it means the base
+            // held none of what was asked for, since the request no longer depends on the destination.
+            // Either way the pull is a no-op, so report nothing rather than a misleading success or room
+            // failure — the caller decides what, if anything, to say about materials that were not
+            // supplied.
             if (plan.Feasible && plan.Lines.Count == 0)
                 return true;
 

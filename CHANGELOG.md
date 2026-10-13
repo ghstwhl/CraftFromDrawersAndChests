@@ -4,6 +4,29 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-10-13
+
+### Fixed
+
+- **Pulling the same recipe twice now supplies materials twice.** The ctrl-click pull — and the
+  pull-key build press — asked storage only for the *shortfall* below what you were already carrying,
+  so once a recipe's materials were in your inventory a second pull did nothing at all: you could not
+  fetch the materials for a second portal, or a second anything. Both now ask for the recipe's or
+  piece's **whole cost** on every press, which is what CraftFromContainers does.
+- **A base that can only partly cover the cost now contributes the part it has** instead of the pull
+  being refused outright, so a fetch still brings back something when the chests are nearly empty.
+  When the base cannot supply it at all, the message still names what is missing — computed from what
+  you are actually short of, so it never names materials you are carrying.
+
+### Changed
+
+- **A full inventory no longer cancels the pull.** The amount is capped to what your inventory can
+  accept, so a fetch delivers what fits. A recipe with several ingredients proves the capped plan as a
+  whole, so it can still report the room failure rather than delivering a partial set.
+- **Crafting and placing are untouched.** Their availability checks and their material consumption
+  still count what you already carry, so a recipe you can partly supply is still offered, and is still
+  paid from your own inventory first. Only the deliberate pull changed.
+
 ## [1.0.1] - 2026-10-13
 
 Supersedes `1.0.0`, which was packaged locally but never published.

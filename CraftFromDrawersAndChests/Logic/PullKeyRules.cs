@@ -21,9 +21,9 @@ namespace CraftFromDrawersAndChests.Logic
     public static class PullKeyRules
     {
         /// <summary>
-        /// Shown when a pull is refused because the player's inventory cannot take the shortfall.
-        /// Listed as a constant so the message is pinned by a test rather than written inline in the
-        /// patch.
+        /// Shown when a pull is refused because the player's inventory cannot take the materials the
+        /// pull would deliver. Listed as a constant so the message is pinned by a test rather than
+        /// written inline in the patch.
         /// </summary>
         public const string NoRoomMessage = "Not enough room in your inventory to pull these materials.";
 
@@ -84,7 +84,7 @@ namespace CraftFromDrawersAndChests.Logic
         }
 
         /// <summary>
-        /// The failure message shown when storage could not supply the shortfall, naming the
+        /// The failure message shown when storage could not supply what was asked for, naming the
         /// missing items once each. An empty (or all-empty) list yields a generic sentence rather
         /// than a dangling prefix, so the player always sees a reason.
         /// </summary>

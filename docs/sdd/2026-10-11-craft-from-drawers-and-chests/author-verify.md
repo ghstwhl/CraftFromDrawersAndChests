@@ -1,12 +1,54 @@
 # Author verification checklist
 
 Every task's in-game step, consolidated. The author runs these on a real Valheim
-server and client before the 1.0.0 release. Build, test and static verification
+server and client before a release. Build, test and static verification
 belong to the controller and are recorded in `progress.md`; the steps here cannot
 be automated and do not block a task's review.
 
 **Deploy for every check:** the built plugin to `BepInEx\plugins\` on **both** the
 server and the client, using the same build on each side.
+
+---
+
+## Validation log — what a build has actually been through in game
+
+The checkboxes below are the full list; this log records which builds the owner has run, so that
+"reviewed clean" is never mistaken for "works".
+
+- **Early 0.1.x, single player (host):** the `cfdac` console command; crafting from chests and drawers;
+  the ctrl-click pull with the hammer and at crafting benches; the per-storage hover naming its state
+  and key.
+- **0.1.12, single player (host):** `left shift+E` fills a fireplace's and a smelter's fuel and ore
+  correctly and with no spurious message; the fireplace's fill hint and the smelter's tooltips are
+  present.
+- **0.1.13, single player (host):** backpack materials count for crafting — a recipe wanting 1 Boar
+  Meat reads `24/1` with 25 carried, the −1 being Adventure Backpacks' *Leave One Item In Backpack*
+  working as designed — and 53 carried Chain reads `52/7` for a recipe needing 7. Single-item station
+  adds print no "you don't have any …" message. A drawer whose pull switch was **off** correctly
+  contributed nothing; that investigation (it cost a full diagnostic round) is why the readout log
+  exists.
+- **1.0.1, multiplayer — this mod on the server and on a client:** station feeding works when the
+  **client** feeds a station, not only the host. That settles the fresh-eyes review's I3 (the station
+  confirmation re-reads the station's ZDO immediately after `InvokeRPC`, which is trustworthy only on
+  the peer that executes the call), which does not reproduce in play.
+- **1.0.1, multiplayer — a second player's backpack is not a pull source** (owner, 2026-10-13): with a
+  second player wearing an Adventure Backpacks backpack in range, the ctrl-click pull takes nothing out
+  of it. This holds by construction as well as by observation: every player reference in `Patches/`,
+  `Pull/` and `Storage/` is `Player.m_localPlayer` (the build-pull prefix returns early on
+  `!ReferenceEquals(__instance, Player.m_localPlayer)`), and no path enumerates another player's
+  inventory. The **station-feed** half of the same check was not reported separately; the same
+  construction covers it, but that half is not a play test.
+- **1.0.2, single player (owner, 2026-10-14):** the reported defect is fixed — repeating the ctrl-click
+  pull on the same recipe fetches the materials again each time, so the materials for a second portal
+  come from a second click. The other two 1.0.2 checks — a base that can only partly cover the cost, and
+  a nearly full inventory — were not reported on this pass.
+
+Settled by owner decision, not defects:
+
+- **The ctrl-click pull does not count the equipped backpack** (review I2): crafting and building count
+  it, the on-demand pull counts the player's inventory only. The owner's ruling: "fine the way it is".
+  The README line this asked for landed in 1.0.2: *Ctrl-click to pull* now states that the pull brings
+  the recipe's **full** materials whatever the player is already carrying, which covers this case.
 
 ---
 
@@ -24,9 +66,10 @@ server and the client, using the same build on each side.
 - [ ] Join from a client whose own local config has a **different** value for it.
       Expected: the client behaves with the **server's** value, and the entry is read-only
       for that non-admin client.
-- [ ] Settle two config defaults before release: `Toggle storage key` ships **empty**, so the
-      per-storage switch cannot be triggered until it is set; `Debug logging` ships **on**
-      (CraftFromContainers parity), which makes the log noisy by default.
+- [x] Settled in 1.0.1, both by the owner: `Toggle storage key` ships as **`x`** — a single key, and
+      never a movement key, because the toggle fires on a key-down with whatever storage is under the
+      crosshair — and `Debug` ships **off** so a fresh install does not write this mod's diagnostics
+      into the player's log.
 
 ## Task 9 — drawer discovery and the pull invariant
 
@@ -123,6 +166,16 @@ server and the client, using the same build on each side.
 - [ ] **`Pull items key` ships as `left ctrl`** (verified in `PluginConfig.cs:132`), so ctrl-click pull works out of the box. **`Toggle storage key` ships empty** (`:134`), so the per-storage switch does nothing until you set it.
 - [ ] Ctrl-click a recipe whose materials are in a chest and a drawer. Expected: the recipe is **not** built, the
       ingredients land in your inventory, and the pulled message shows.
+- [x] **Repeat pulls fetch repeat materials (1.0.2, R32).** Ctrl-click the same recipe twice with enough in
+      the base for both. Expected: the second pull supplies the whole cost again — the ingredients for two
+      portals, not one. Before 1.0.2 the second pull did nothing at all, silently. — **Confirmed by the
+      owner, 1.0.2 single player, 2026-10-14.**
+- [ ] **A base that can only partly cover the cost still contributes (1.0.2).** Ask for a recipe whose cost
+      is 4 with only 2 left in the chests. Expected: the 2 arrive and the pulled message shows, rather than
+      nothing arriving behind a refusal.
+- [ ] **A nearly-full inventory no longer cancels the pull (1.0.2).** With room for part of the cost, the
+      pull delivers the part that fits. With no room at all nothing moves and nothing is dropped — and for a
+      single-ingredient recipe nothing is said (known rough edge, recorded in R32).
 - [ ] **Readout flash.** With the panel open on a recipe the inventory cannot cover but storage can, the
       requirement's amount text flashes between `Flash color` and `Unflash color`. CFC's only flash is this
       readout — there is no world-object highlight to look for.
@@ -130,6 +183,10 @@ server and the client, using the same build on each side.
       format such as an unbalanced brace must fall back to the plain amount rather than throw.
 - [ ] Fill your inventory completely and repeat the ctrl-click. Expected: nothing is pulled, **nothing is on the
       ground**, and a message names the missing items — each named **once**, even when a recipe lists it twice.
+      **1.0.2 changes the message for a single-ingredient recipe:** the request is now capped to what the
+      inventory can accept, so it caps to zero, moves nothing and says nothing — the rough edge recorded in
+      R32 and the check above. For a multi-ingredient recipe the plan still fails as a set, so the room
+      message still appears.
 - [ ] Hold `Prevent mod key` (default `left alt`) and ctrl-click. Expected: the pull is suppressed and the click
       crafts as vanilla. With `Switch prevent = true`, the pull must happen **only** while the key is held.
 - [ ] With the prevent key held, confirm the crafting panel shows **vanilla** availability — storage no longer makes
@@ -197,8 +254,9 @@ Deploy the same build to the server and client. For each check, stand within `Ma
       with `PullFuel`, `PullOre` and `PullCooking` all false — a turret has no flag of its own (CFC parity).
 - [ ] **Prevent key.** Hold it → no station feeds at all.
 - [ ] **Drawers feed stations too.** A drawer in range of a station feeds it, via `ForceRemove`.
-- [ ] **Two players, and no other player's backpack.** With a second player wearing an AdventureBackpacks
-      backpack standing in range, neither a station feed nor a ctrl-click pull may take anything out of it.
+- [x] **Two players, and no other player's backpack** — **partly confirmed in 1.0.1** (owner, 2026-10-13):
+      with a second player wearing an AdventureBackpacks backpack standing in range, the ctrl-click pull
+      takes nothing out of it. The **station feed** half is still unconfirmed in play.
 
 ## Task 15b — fill-all key and console command
 
@@ -230,9 +288,36 @@ Deploy the same build to the server and client. For each check, stand within `Ma
 
 _Appended when Task 15c completes._
 
-## Task 15d — AdventureBackpacks coexistence
+## Task 15d — AdventureBackpacks coexistence (0.1.13)
 
-_Appended when Task 15d completes._
+The backpack half of this is **implemented**; it still needs the owner's in-game pass, and the
+two-player half needs a second player.
+
+- [ ] **The backpack counts in the crafting panel.** Boar Meat (say 25) in an equipped backpack,
+      nothing in the inventory: a cauldron recipe wanting 1 must read `25/1` (not `0/1`), the recipe must
+      be offered, and pressing craft must work.
+- [ ] **The backpack counts for a forge recipe too**, and for **building**: with an ingredient only in
+      the backpack, the piece must be offered in the build menu.
+- [ ] **Nothing is pulled *out* of the backpack.** Wood in the backpack and Wood in a chest, both in
+      range: the recipe must be paid from the backpack, and **no Wood may end up sitting in the
+      inventory** — pulling it out of the backpack and replacing it from the chest is the failure mode
+      this design forbids.
+- [ ] **The backpack is never a pull source.** A ctrl-click pull takes from chests and drawers only; the
+      backpack's contents never move as a result of the pull key, whatever is in it.
+- [ ] **`Left alt` is the prevent key, by design.** Holding it with a crafting or build panel open makes
+      the panel show AdventureBackpacks' own number — **backpack counted, storage not**. This is the
+      CraftFromContainers-port `Prevent mod key`, not a bug; rebind or clear that key if it is in the way.
+- [ ] **The debug readout.** With `Debug` on, each requirement logs one `Readout '<prefab>' ('<shared
+      name>'): held N + storage M of K required` line **per distinct answer** (not per frame).
+- [ ] **The drawer-vs-recipe name check (the reported Dvergr lantern).** If an ingredient that is visibly
+      in a drawer still reads 0, the same log line must print `nothing holds it;` followed by every
+      in-range source with its kind, distance, count and each drawer's raw `zdo='<prefab>'x<amount>`.
+      Compare that stored prefab string with the requirement's prefab — that is the whole point of the
+      line, and it is the only place both halves are visible.
+- [x] **Two players — the ctrl-click pull half is confirmed in 1.0.1** (owner, 2026-10-13): with a
+      second player wearing a backpack in range, the pull takes nothing out of it. The **station feed**
+      half was not reported separately; it should hold for the same reason (`Player.m_localPlayer` is the
+      only player the station paths read) but is not yet a play test.
 
 ## Task 15c — AdventureBackpacks coexistence
 

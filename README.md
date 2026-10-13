@@ -15,7 +15,9 @@ In short: CraftFromContainers, but for drawers too.
 - **Build from storage.** The build hammer's "do I have the materials?" check and the
   material consumption both draw from storage.
 - **Ctrl-click to pull.** Hold the pull key and ctrl-click to move ingredients into your
-  inventory on demand.
+  inventory on demand. It brings the recipe's **full** materials every time — whatever you are
+  already carrying — so you can click twice for the materials for two portals. There's no excuse
+  for sailing to another continent without portal mats again!
 - **Station feeding.** Fireplaces, smelters and cooking stations pull fuel, ore and cooking
   ingredients from storage.
 - **One range, both storage kinds.** A single range setting (default 10 m, and `0` or less
@@ -25,7 +27,8 @@ In short: CraftFromContainers, but for drawers too.
   everyone and saved with the world.
 - **Your backpack counts.** With **Adventure Backpacks**, materials in your equipped backpack
   count as held while crafting and building — under that mod's own rules, and without moving
-  anything into your inventory to make it work.
+  anything into your inventory to make it work. Only your own backpack is ever counted: another
+  player's is never used, whether you are crafting, building or pulling.
 - **Server-authoritative config.** Settings are registered with Jötunn, so the server's
   values are pushed to clients and non-admins cannot change them.
 
@@ -105,7 +108,10 @@ mod will not consume from it either.
 this mod entirely while it is held, so only your inventory is used.
 
 **A pull did not deliver everything.** Delivery goes into your inventory, so it needs room there: a
-matching free stack, or an empty slot for an item that does not stack (such as a Dvergr lantern).
+matching free stack, or an empty slot for an item that does not stack (such as a Dvergr lantern). The
+pull takes what your inventory can accept rather than refusing the whole thing, so a nearly full
+inventory brings back part of the materials; if nothing at all fits, it does nothing. A recipe with
+several ingredients has to fit as a set.
 
 ## Bugs and feature requests
 

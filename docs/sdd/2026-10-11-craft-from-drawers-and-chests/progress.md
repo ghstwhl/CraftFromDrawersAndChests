@@ -334,3 +334,71 @@ Total failure (2026-10-12): the owner's first in-game test of the 0.1.0 package 
 Task 15f: fix (commits `92c029e`, `edac95f`; tests 238). Deleted the invalid call with a comment recording why it must not return; guarded `Awake`'s config init so a throw there cannot prevent patching, logging `LogError` and forcing `ModEnabled=false` instead of leaving the mod silently inert; added `[SynchronizationMode(AdminOnlyStrictness.Always)]`. Audited **all 21 Harmony targets** — every one resolves in the publicized assembly, and the single runtime-resolved target (Item Drawers' drawer hover) is `[HarmonyPrepare]`-guarded.
 Lesson (2026-10-12): fifteen tasks were recorded "complete and reviewed clean" with every in-game step deferred to the owner, and the mod had **never once run in game**. The reviews caught many subtle defects but could not catch a call that throws at runtime — which is exactly why the owner's validation pass exists, and why "reviewed clean" must never be read as "it works".
 
+## Post-release defect: the pull could only be used once (1.0.2, 2026-10-13)
+
+Reported by the owner, verbatim: *"There is a problem wiht ctrl-click to pull mats into my inventory. It
+SHOULD NOT check to see if I have the mats in my inventory/backpack first. Because it checks my
+inventory/backpack first, I can only pyull the mats for any given item once. Sometimes I want to pull the
+mats to build multiple portals, and this behavior prevents that."*
+
+Verified cause — not a defect in the plan, a deliberate divergence the requirement outgrew.
+`PullEngine.BuildShortfallRequests` subtracted what the player carries, so a second ctrl-click computed a
+zero shortfall, emitted no request, and the prefix returned silently. CraftFromContainers does the
+opposite: CFC 4.0.7's `PullResources` accumulates `totalAmount` only from what it has itself taken from
+containers, and requests `GetAmount(qualityLevel) * multiple` (CFC ~1175), so every press asks for the
+cost again. The divergence was deliberate and recorded at the time (R27, Task 14b review 1): "the pull
+requested the **whole** requirement while the gate validated the **shortfall**", which produced a refusal
+plus re-pulls that drained storage stack by stack. R27 fixed the refusal by making the pull request the
+shortfall — and broke repeatability with it.
+
+**R32 (owner ruling, 2026-10-13): the two pulls have different intents, so each gets its own request
+basis.** A new pure `RequestBasis` (`Logic/PullMath.RequestAmount`) names them, so the rule has one
+definition and a test:
+
+- `FullCost` — the **deliberate fetch**: the ctrl-click pull and the pull-key build press ask for the
+  recipe's or piece's whole cost however much the player carries, so the action is repeatable. CFC parity.
+- `Shortfall` — the **craft and placement** pull: unchanged, and still the basis every requirement gate
+  reads (`PlanFor`), so "can this be crafted?" keeps its meaning and a partly-supplied recipe is still
+  offered rather than greyed out.
+
+The fetch is additionally planned as a **fill** (`fillUpTo`), so a base that can only partly cover the
+cost contributes the part it has and the amount is capped to what the destination accepts. Without the
+fill, a pull while already holding the materials would be refused all-or-nothing against a base short of
+the total — the very symptom R27 was fixing.
+
+Deliberately unchanged: `CraftPatches`' availability gates, the consume prefix's top-up, station feeding
+(`PullToInventory`: shortfall + all-or-nothing) and the station fill key (`PullToInventoryFill`: shortfall
++ fill). Verified **on the built 1.0.2 DLL by IL argument pushes**, not by reading the source: the three
+call sites into `PullToInventoryCore` pass `RequestBasis`/`fillUpTo` as `1,1` (fetch), `0,0` (station
+feed) and `0,1` (station fill).
+
+Message behaviour is deliberately preserved. `FailureReason` now shares one predicate with a new nullable
+`MissingReason`, always computed from the **shortfall** plan — the question "what is still missing?" —
+never from the fetch's own whole-cost plan, which would name materials the player is holding. A fetch the
+base could not supply still names the missing materials; a fetch whose cost the player already carries
+stays silent.
+
+Known rough edge, reported rather than papered over: when the base supplies nothing **and** the player is
+not short of anything (they already carry the whole cost, or the inventory cannot take a single item),
+the fetch is silent. CraftFromContainers is silent there too, but the mod's README documents the room
+case, so this is a candidate follow-up rather than a settled decision.
+
+Untested by the suite: the request basis is a *wiring* choice in game-facing code, which no linked test
+can express (the test project links `Logic/**` only). The pure amount rule it rests on is pinned by
+`PullMathTests`; the wiring by the IL check above. **Owner's in-game pass:** the repeat-pull half is
+confirmed — 1.0.2, single player, 2026-10-14: "repeated ctrl-click pulls now fetch mats repeatedly". Still
+unconfirmed in play: a pull with the base nearly empty, and a pull with the inventory nearly full.
+
+Process note (2026-10-13): **the two copies of `tools/cecil.ps1` had forked, and no longer do.** The
+sanctioned working copy (`.superpowers/sdd/<plan>/tools/cecil.ps1` — the path R25 names) was 152 lines;
+the durable `docs/sdd` copy was 186, and every extra line was the `-IL` mode that prints a method's
+instructions, plus the `-Type` switch it needs to select which type's method is meant. The consequence
+was concrete: the tool the rule names could not answer the one question 1.0.2 needed — which argument
+values a call site pushes, which is visible only in the instructions — so the durable copy had to be run
+instead, i.e. the sanction had to be stepped around to get evidence.
+
+Owner's decision (option (a), 2026-10-13): keep the more capable file as **both** copies. The durable
+file was copied over the working one; the two are now byte-identical (186 lines, hash-compared) and `-IL`
+was verified working **from the sanctioned path** against the built 1.0.2 DLL. Keep them in sync from
+here: these are two copies of one tool by design, so any drift between them is silent by construction.
+

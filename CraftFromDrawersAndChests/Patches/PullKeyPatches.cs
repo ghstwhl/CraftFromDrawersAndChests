@@ -117,18 +117,28 @@ namespace CraftFromDrawersAndChests.Patches
                 recipe.m_resources, qualityLevel, multiplier, player, flags, out bool requested);
 
             // Intercepted either way: the click was a pull, so vanilla must not craft as well.
-            if (!requested)
-                return false; // nothing to fetch — a no-op, with neither a success nor a failure to report
-
-            if (pulled)
-            {
-                ShowMessage(player, flags.PulledMessage);
-                Debug(flags, "Pull: pulled the ingredients for '" + recipe.m_item.m_itemData.m_shared.m_name + "'.");
-            }
-            else
+            if (!pulled)
             {
                 ShowMessage(player, FailureReason(player, recipe.m_resources, qualityLevel, multiplier, flags));
+                return false;
             }
+
+            // Storage contributed nothing. The fetch asks for the whole cost regardless of what the
+            // player carries, so this is the base failing to supply rather than the player already
+            // holding it: name what was not supplied, and stay silent when the player in fact already
+            // carries the whole cost (there is nothing useful to say, and nothing was asked of the
+            // base in the first place).
+            if (!requested)
+            {
+                string missing = MissingReason(player, recipe.m_resources, qualityLevel, multiplier, flags);
+                if (missing != null)
+                    ShowMessage(player, missing);
+
+                return false;
+            }
+
+            ShowMessage(player, flags.PulledMessage);
+            Debug(flags, "Pull: pulled the ingredients for '" + recipe.m_item.m_itemData.m_shared.m_name + "'.");
 
             return false;
         }
@@ -145,8 +155,10 @@ namespace CraftFromDrawersAndChests.Patches
         /// returns false, exactly as CFC's does, so a click that was meant to fetch materials cannot
         /// also place the piece — and a placement can therefore never be paid for with nothing. The
         /// pull itself is <see cref="PullEngine.PullToPlayer"/>, the very entry point the ctrl-click
-        /// pull uses: it plans the shortfall, proves the destination can take every line, and refuses
-        /// having moved nothing when it cannot, so no item can reach the ground.
+        /// pull uses: it asks storage for the piece's <b>whole cost</b> whatever the player carries —
+        /// CFC's own rule, and what makes a second press fetch a second piece's materials — planned as
+        /// a fill so a base that can only partly cover it still contributes the part it has, and proved
+        /// against the destination so no item can reach the ground.
         /// </para>
         /// <para>
         /// <b>The placement gate already knows about storage.</b> The status this prefix reads is the
@@ -216,18 +228,25 @@ namespace CraftFromDrawersAndChests.Patches
                 selectedPiece.m_resources, 0, 1, __instance, flags, out bool requested);
 
             // Intercepted either way: the press was a pull, so the piece is not placed.
-            if (!requested)
-                return false; // nothing to fetch — a no-op, with neither a success nor a failure to report
-
-            if (pulled)
-            {
-                ShowMessage(__instance, flags.PulledMessage);
-                Debug(flags, "Pull: pulled the materials for building piece '" + selectedPiece.name + "'.");
-            }
-            else
+            if (!pulled)
             {
                 ShowMessage(__instance, FailureReason(__instance, selectedPiece.m_resources, 0, 1, flags));
+                return false;
             }
+
+            // Nothing came out of storage: the fetch asks for the piece's whole cost whatever the
+            // player carries, so say what the base did not supply rather than going silent.
+            if (!requested)
+            {
+                string missing = MissingReason(__instance, selectedPiece.m_resources, 0, 1, flags);
+                if (missing != null)
+                    ShowMessage(__instance, missing);
+
+                return false;
+            }
+
+            ShowMessage(__instance, flags.PulledMessage);
+            Debug(flags, "Pull: pulled the materials for building piece '" + selectedPiece.name + "'.");
 
             return false;
         }
@@ -407,22 +426,35 @@ namespace CraftFromDrawersAndChests.Patches
         }
 
         /// <summary>
-        /// Why a refused pull was refused, for the player-facing message: the shortfall plan is rebuilt
-        /// (it is cheap — the sources are cached for the frame) so a storage shortfall can name only the
-        /// items that are actually still missing; a plan that storage could cover but the inventory
-        /// could not take reports the room failure instead. Shared by the recipe and the building-piece
-        /// pull, which differ only in the requirements and the quality/multiplier they pass. Planned
-        /// from the same shortfall <see cref="PullEngine.PullToPlayer"/> used, so the message can never
-        /// name an item the player is already carrying.
+        /// Why a pull was refused for the player-facing message: the materials that are still missing,
+        /// or the room failure when nothing is missing. Shared by the recipe and the building-piece
+        /// pull, which differ only in the requirements and the quality/multiplier they pass.
         /// </summary>
         private static string FailureReason(
             Player player, Piece.Requirement[] requirements, int qualityLevel, int multiplier, FeatureFlags flags)
         {
+            return MissingReason(player, requirements, qualityLevel, multiplier, flags)
+                ?? PullKeyRules.NoRoomMessage;
+        }
+
+        /// <summary>
+        /// Names the materials the player is still short of, or null when the player's own inventory
+        /// already covers the requirement.
+        /// <para>
+        /// Always computed from the <b>shortfall</b> plan — the question "what is still missing?" —
+        /// rather than from the fetch's own whole-cost plan: the fetch asks for the whole cost whatever
+        /// the player carries, so its own plan would name materials the player is already holding. The
+        /// sources are cached for the frame so rebuilding the plan costs nothing, and it is the same
+        /// <see cref="PullEngine.PlanFor"/> the crafting and placement gates use, so the message cannot
+        /// name an item those gates already counted.
+        /// </para>
+        /// </summary>
+        private static string MissingReason(
+            Player player, Piece.Requirement[] requirements, int qualityLevel, int multiplier, FeatureFlags flags)
+        {
             PullPlanResult plan = PullEngine.PlanFor(
                 requirements, qualityLevel, multiplier, player, flags, out _);
-            return plan.Feasible
-                ? PullKeyRules.NoRoomMessage
-                : PullKeyRules.MissingMessage(plan.MissingItemNames);
+            return plan.Feasible ? null : PullKeyRules.MissingMessage(plan.MissingItemNames);
         }
 
         /// <summary>

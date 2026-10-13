@@ -29,10 +29,20 @@ one that survives.** If the two diverge, this one is what git carries, and it ma
 | `task-15-scope.md` | Verified scope facts for the station work (the engine already existed). |
 | `scratchpad.md` | The theory written while one task was stuck, per the project protocol. |
 | `task-*-brief.md` / `task-*-report.md` | Per-task requirements, and what was actually built and verified. |
-| `tools/cecil.ps1` | The hardened Mono.Cecil probe used for **all** assembly verification. Reports method and field **visibility**, which is what makes the recurring "non-public member called directly" defect class checkable. |
+| `review-*.findings.md` | The fresh-eyes review's findings and triage, including which findings were fixed, which were accepted and why. Copied; the companion `review-*.diff` is not (see below). |
+| `tools/cecil.ps1` | The hardened Mono.Cecil probe used for **all** assembly verification. Reports method and field **visibility** — which is what makes the recurring "non-public member called directly" defect class checkable — and can dump one method's **IL** with `-IL -Type <name>`, the only way to see which argument values a call site pushes. The two copies of this file are kept **byte-identical** (see `progress.md`, 2026-10-13). |
 
 ## Deliberately not copied
 
 - `review-*.diff` — the per-task review packages. Regenerable in seconds from a commit range with the
-  SDD `review-package` script, so they are noise in history.
+  SDD `review-package` script, so they are noise in history. (The **findings** that came out of a review
+  *are* copied: a diff is reproducible, a triage and its reasoning are not.)
+- `plan-path` — a one-line pointer to the Superpowers plan, which already lives in this repository at
+  `docs/superpowers/plans/2026-10-11-craft-from-drawers-and-chests.md`. Copying it would duplicate a
+  path, not a document.
+- `dispatch-probe.txt` — a scratch marker written to test whether a dispatch could write files at all.
+  No record value.
+- Ad-hoc probe scripts (`tools/_inspect_*.ps1`, `scratchpad-decompile.ps1` and the like) — R25 forbids
+  writing them and `tools/cecil.ps1` is the sanctioned tool; a stale copy here would be an invitation to
+  use one.
 - The `.superpowers/skills/` package itself — third-party, and not ours to vendor.
