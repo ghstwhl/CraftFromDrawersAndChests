@@ -23,9 +23,18 @@ tag, the asset and the manifest all tell the same story, rather than rewriting t
 - Still unconfirmed in play, on the checklist: a pull with the base nearly empty, and a pull with the
   inventory nearly full.
 
+## Published
+
+- **GitHub release published 2026-10-14** at the owner's instruction:
+  <https://github.com/ghstwhl/CraftFromDrawersAndChests/releases/tag/v1.0.3> — verified from the public API:
+  `draft = false`, `prerelease = false`, one asset `CraftFromDrawersAndChests-1.0.3.zip`, **64,012 bytes**,
+  equal to the local build. The tag and `main` are both at `e2f384d`.
+- Commits for this release: `5cb4d5f` (the packaging change) then `e2f384d` (these notes).
+
 ## Still to do
 
 - **Thunderstore still serves 1.0.1.** Upload `CraftFromDrawersAndChests-1.0.3.zip` as 1.0.3. A Thunderstore
   version is immutable, so it has to be right the first time.
 - Tell players on 1.0.1 that the server and every client must move to 1.0.3 together: the version check
   refuses a mismatch.
+- The two unconfirmed behaviour checks from 1.0.2 stay on the checklist in `author-verify.md`.

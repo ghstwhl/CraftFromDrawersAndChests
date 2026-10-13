@@ -424,3 +424,11 @@ uploaded to Thunderstore, so rewriting it was possible — but it is still a rew
 and a new version keeps the tag, the asset and the commit telling the same story. Thunderstore's first copy
 of the repeat-pull fix therefore arrives as `1.0.3`.
 
+Release note (2026-10-14): **1.0.3 is published on GitHub.** `5cb4d5f` carries the packaging change (pack
+`5.4.2351` in the manifest, the version bump, changelog, README and `REFERENCES.md`); `e2f384d` carries the
+release notes. Tag `v1.0.3` and `main` are both at `e2f384d`, and the asset
+`CraftFromDrawersAndChests-1.0.3.zip` (64,012 bytes) was verified equal to the local build from the public
+API (`draft = false`). The plugin binary is byte-size identical to `1.0.2`'s (84,480 bytes) — the record's own
+evidence that this release changed no code. **Thunderstore still serves 1.0.1:** uploading this zip there is
+the owner's step, and a Thunderstore version is immutable.
+
