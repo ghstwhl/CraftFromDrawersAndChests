@@ -4,7 +4,21 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-10-14
+
+Packaging only — no behaviour change. `1.0.2` is the release that fixed the repeat pull; this one exists
+because that release's manifest still carried the older BepInEx pack.
+
+### Changed
+
+- **The BepInExPack dependency is now `5.4.2351`**, the current pack, instead of `5.4.2350`, so mod
+  managers no longer push players onto the older one. Nothing else changes: both packs ship the same
+  BepInEx 5.4.23.5 core and HarmonyX 2.9.0, which is what this mod binds to, so `5.4.2350` keeps working.
+
 ## [1.0.2] - 2026-10-13
+
+Published on GitHub only — the Thunderstore upload was skipped in favour of `1.0.3`, which carries the
+same fix plus the current BepInEx pack dependency.
 
 ### Fixed
 

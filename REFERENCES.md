@@ -81,7 +81,7 @@ assembly — as `Patches/VanillaChestSource.cs`, `Patches/PullKeyPatches.cs` and
 
 | Source | Version | Where it comes from | Used for |
 |---|---|---|---|
-| **BepInEx 5** | pack `5.4.2350` | `denikson-BepInExPack_Valheim`; copied into `.references\BepInEx\5.4.2350\BepInEx\core\` | Plugin base, `ConfigFile`/`ConfigEntry`, logging |
+| **BepInEx 5** | pack `5.4.2351` (pack `5.4.2350` also works) | `denikson-BepInExPack_Valheim`; copied into `.references\BepInEx\5.4.2350\BepInEx\core\` | Plugin base, `ConfigFile`/`ConfigEntry`, logging |
 | **HarmonyX** | `2.9.0` (`0Harmony.dll`) | shipped with the BepInEx pack | Runtime patches |
 | **Jötunn** | 2.30.2 | NuGet package `JotunnLib` 2.30.2 (`packages.config`); <https://www.nuget.org/packages/JotunnLib> | Mod framework: `SynchronizationManager` (server-synced config), `NetworkCompatibility`, config helpers |
 | **MultiUserChest** | 0.6.2 | the installed mod set (`MSchmoecker-MultiUserChest`), staged into `.references\Mods\` | The only supported chest read/removal path (`ContainerHandler.RemoveItemFromChest`), so two players can use one chest at once |
@@ -90,6 +90,15 @@ assembly — as `Patches/VanillaChestSource.cs`, `Patches/PullKeyPatches.cs` and
 | **AssemblyPublicizer** (CabbageCrow) — <https://github.com/CabbageCrow/AssemblyPublicizer> | cached at `tools\.cache\publicizer\AssemblyPublicizer\AssemblyPublicizer.exe` | Publicizing the four game assemblies; driven by `tools/New-ValheimRefs.ps1` |
 | **Mono.Cecil** | ships with the Jotunn NuGet package and the publicizer | Reading IL/metadata when verifying API facts |
 | **nuget.exe** | latest (auto-downloaded to `tools\.cache`) | `packages.config` restore in `tools/Build.ps1` |
+
+**On the BepInEx version numbers.** `5.4.2350` and `5.4.2351` are Thunderstore *packaging* versions of
+`denikson-BepInExPack_Valheim`, not BepInEx's own version. Both ship **BepInEx 5.4.23.5**, HarmonyX
+**2.9.0** (`0Harmony.dll`) and MonoMod **22.1.29.1** — the assemblies the mod actually binds to — verified
+by reading the assembly file versions of the manager's cached pack
+(`…\gale\cache\denikson-BepInExPack_Valheim\5.4.2351\BepInEx\core\`) against the copies in
+`.references\BepInEx\5.4.2350\` and against what the running profiles load. The reference folder keeps its
+original name because its contents did not change; only the dependency string in `manifest.json` moved to
+the current pack.
 | **MSBuild** (Visual Studio Build Tools) | local toolchain | Compiling the legacy (non-SDK) csproj |
 
 ## 4. Referenced third-party mods

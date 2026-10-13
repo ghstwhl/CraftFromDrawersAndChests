@@ -39,7 +39,8 @@ In short: CraftFromContainers, but for drawers too.
 > different version — the connection is refused. The exact same `CraftFromDrawersAndChests.dll`
 > is used on the server and on every client.
 
-- **BepInEx 5.4.2350** (the BepInExPack_Valheim version).
+- **BepInEx 5.4.2351** (the current BepInExPack_Valheim). `5.4.2350` works too: both packs ship the
+  same BepInEx 5.4.23.5 core and HarmonyX 2.9.0.
 - **Jötunn 2.30.2** — required.
 - **MultiUserChest 0.6.2** — required. All chest reads and removals go through it so two
   players can use the same chest at once without desync.
@@ -68,7 +69,7 @@ Install it with your mod manager, or download the zip and extract it into `BepIn
 
 **By hand:**
 
-1. Install **BepInExPack_Valheim** (BepInEx 5.4.2350) into your Valheim folder.
+1. Install **BepInExPack_Valheim** (BepInEx 5.4.2351) into your Valheim folder.
 2. Drop `CraftFromDrawersAndChests.dll` into `BepInEx\plugins`.
 3. Install **MultiUserChest** and, optionally, **KG Item Drawers**.
 4. Do the same on the server. Restart the server and each client.

@@ -410,3 +410,17 @@ local build, and the release verified from the public API as `draft = false`, `p
 version is immutable, so it has to be right the first time. The remaining steps are listed in
 `release-1.0.2-notes.md` under "Still to do".
 
+Process note (2026-10-14): **BepInExPack_Valheim moved to `5.4.2351`, and nothing in the mod changes.**
+Verified rather than assumed: the pack number is a Thunderstore *packaging* version, and the assemblies the
+mod actually binds to are identical in both packs — read from the manager's cached pack
+(`…\gale\cache\denikson-BepInExPack_Valheim\5.4.2351\BepInEx\core\`) as BepInEx `5.4.23.5`, HarmonyX
+`2.9.0.0` and MonoMod `22.1.29.1`, which are exactly the versions in `.references\BepInEx\5.4.2350\` and
+exactly what the updated profiles load. Only the dependency string and the player-facing documentation
+moved: `manifest.json`, `README.md` (requirement and install step) and the `REFERENCES.md` row, which now
+records why the reference folder keeps the name `5.4.2350`. Worth noting for the record: Jötunn 2.30.2
+still declares `denikson-BepInExPack_Valheim-5.4.2333`, so this mod's dependency was already ahead of its
+own framework's. **Decision (owner, 2026-10-14): cut `1.0.3`.** `1.0.2` was published on GitHub but never
+uploaded to Thunderstore, so rewriting it was possible — but it is still a rewrite of a tagged artefact,
+and a new version keeps the tag, the asset and the commit telling the same story. Thunderstore's first copy
+of the repeat-pull fix therefore arrives as `1.0.3`.
+
