@@ -402,3 +402,11 @@ file was copied over the working one; the two are now byte-identical (186 lines,
 was verified working **from the sanctioned path** against the built 1.0.2 DLL. Keep them in sync from
 here: these are two copies of one tool by design, so any drift between them is silent by construction.
 
+Release note (2026-10-14): **1.0.2 is published on GitHub.** Commit `8af7cb6` carries the fix, the tests
+and the documentation; `589db30` carries the release notes. Tag `v1.0.2`, taken from the tip of `main` as
+`v1.0.1`'s was, with asset `CraftFromDrawersAndChests-1.0.2.zip` — 63,698 bytes, verified equal to the
+local build, and the release verified from the public API as `draft = false`, `prerelease = false`.
+**Thunderstore still serves 1.0.1:** uploading the same zip there is the owner's step, and a Thunderstore
+version is immutable, so it has to be right the first time. The remaining steps are listed in
+`release-1.0.2-notes.md` under "Still to do".
+
