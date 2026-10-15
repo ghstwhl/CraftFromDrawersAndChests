@@ -13,7 +13,10 @@ is one this mod patches or reflects. No access modifier or signature the mod bin
 assembly. The reasoning and the raw evidence are in
 [`docs/sdd/2026-10-11-craft-from-drawers-and-chests/game-1.0.20-compat-analysis.md`](docs/sdd/2026-10-11-craft-from-drawers-and-chests/game-1.0.20-compat-analysis.md).
 
-This build has **not** been run in game yet; it is held for the owner's checks before release.
+This build was verified in game by the owner on 2026-10-16, single player (host), on Valheim **1.0.20** as
+reported by the game itself: the plugin loaded, all **22** Harmony patches applied, the container-tracking
+patch was live and tracked a `piece_chest_wood(Clone)`, and the session logged **0 errors**. The five
+functional checks in `author-verify.md` ("Valheim 1.0.20 update") are the open items.
 
 ### Changed
 

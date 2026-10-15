@@ -42,10 +42,13 @@ The checkboxes below are the full list; this log records which builds the owner 
   pull on the same recipe fetches the materials again each time, so the materials for a second portal
   come from a second click. The other two 1.0.2 checks — a base that can only partly cover the cost, and
   a nearly full inventory — were not reported on this pass.
-- **1.0.4 (Valheim 1.0.20), built 2026-10-16, NOT YET RUN IN GAME:** no code change; the update renamed
-  `ItemDrop.ResetVariantIfInvalid` → `EnsureValid` and added a cheat-flag system, touching none of the 24
-  members this mod binds. Awaiting the checks in "Valheim 1.0.20 update" (at the end of this file) before
-  release.
+- **1.0.4, single player (host), 2026-10-16 — run on Valheim 1.0.20:** the owner installed the release DLL into
+  the `Modheim` profile by hand and launched. The game itself reports `Valheim Version: 1.0.20`; the plugin
+  loaded, all 22 Harmony patches applied, the container-tracking patch was live and tracked a
+  `piece_chest_wood(Clone)`, and the session logged **0 errors** (12 warnings). This is the **load** path: no
+  feature appears in the log, so the five checks under "Valheim 1.0.20 update" stay open. No code change was
+  needed — the update renamed `ItemDrop.ResetVariantIfInvalid` → `EnsureValid` and added a cheat-flag system,
+  touching none of the 24 members this mod binds.
 
 Settled by owner decision, not defects:
 
@@ -357,4 +360,7 @@ Evidence and reasoning: `game-1.0.20-compat-analysis.md` beside this file.
 5. [ ] **MultiUserChest as a non-host client.** Store into and pull from a chest. Expected: contents
    survive a rejoin — no loss, no duplication, no duplicate delivery.
 
-**Release 1.0.4 only after all five pass.** Any failure goes to `/investigate` — do not patch from a guess.
+**Verification state at release (2026-10-16):** the **load** path is confirmed in game (see the validation log),
+and the compatibility evidence is the assembly diff in `game-1.0.20-compat-analysis.md`. These five functional
+checks were **not** run before 1.0.4 was published — the owner released on the strength of the load and that
+analysis. Run them against the released build; any failure goes to `/investigate`, not to a patch from a guess.

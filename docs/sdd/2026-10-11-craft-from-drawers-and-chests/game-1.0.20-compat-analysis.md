@@ -59,9 +59,11 @@ Two consequences worth keeping:
 1. The repo's `Directory.Build.props` said `1.0.16` while the game was already **1.0.17** on Oct 13 — the
    label had drifted one version *before* this update. Regenerating the refs must therefore be verified by
    **hash**, never by the folder name (see §6).
-2. **1.0.20 is the owner's stated version.** It is consistent with everything measurable here (a second
-   update landed 2026-10-16) but was not independently confirmed. Confirm it by reading the
-   `Valheim version:` line in `LogOutput.log` after the next game launch.
+2. **1.0.20 is confirmed — though only after the fact.** At the time of writing it was the owner's stated
+   version: consistent with everything measurable here (a second update landed 2026-10-16) but not
+   independently verifiable. It has since been confirmed from the game's own log — the 2026-10-16 session
+   in the `Modheim` profile, with the 1.0.4 DLL installed, reports `[Message: BepInEx] Valheim Version: 1.0.20`.
+   Label future updates from that line, never from the folder name or a patch note.
 
 ## 3. The managed API delta
 
@@ -184,6 +186,13 @@ Build and test status at the time of writing (against the 1.0.16 refs, i.e. the 
 **Caveat on the tests:** the NUnit suite is `Logic/**`-only and cannot observe game APIs. It is a
 regression guard, not compatibility evidence — §4 is the compatibility evidence. In-game behaviour, and
 especially the new save-migration path in §7, can only be settled by running the game.
+
+**Settled in game, 2026-10-16:** the owner ran the 1.0.4 build on Valheim **1.0.20** (single player, host,
+`Modheim` profile): the plugin loaded, all 22 patches applied, the tracking patch was live
+(`piece_chest_wood(Clone)` -> tracked), and the session logged **0 errors** across 12 warnings. That closes
+the "does the assembly load under the new build" question. The five functional checks — the first load of an
+existing world, no cheat flag left behind, unchanged costs, client-side station feeding, and MultiUserChest
+as a non-host client — remain open in `author-verify.md`.
 
 ## 6. How to re-run this analysis
 
