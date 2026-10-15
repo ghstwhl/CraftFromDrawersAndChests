@@ -310,11 +310,16 @@ Supersedes Task 3 Step 5's "no release artifact" check, which was correct when i
       hashes equal `bin\Release\CraftFromDrawersAndChests.dll`; and the DLL's `[BepInPlugin]` blob reads
       `NorCal_Nerds.CraftFromDrawersAndChests.CraftFromDrawersAndChests.1.0.4` with no stale `1.0.3`. Scan that
       blob as **ASCII** — attribute strings are UTF-8, and a UTF-16 scan reports a false negative.
-- [ ] **Step 3 (owner): test.** Deploy the packaged `plugins\CraftFromDrawersAndChests.dll` to server and client
+- [x] **Step 3 (owner): test.** Deploy the packaged `plugins\CraftFromDrawersAndChests.dll` to server and client
       by hand — the build deliberately does not deploy (`/p:DevPluginsFolder` points at a non-existent path) —
-      and run the five checks in "Valheim 1.0.20 update".
-- [ ] **Step 4 (owner, after testing): publish.** GitHub release plus Thunderstore, with a 1.0.4 body following
-      `docs/sdd/2026-10-11-craft-from-drawers-and-chests/release-1.0.3-body.md`. Deliberately not done.
+      and run the five checks in "Valheim 1.0.20 update". **Done for the load path only:** the owner installed
+      the packaged DLL into the `Modheim` profile and launched on Valheim 1.0.20 — the game itself reports that
+      version, all 22 patches applied, tracking was live, **0 errors**. The five functional checks are still open.
+- [x] **Step 4 (owner): publish.** **Published 2026-10-16** as `v1.0.4`:
+      <https://github.com/ghstwhl/CraftFromDrawersAndChests/releases/tag/v1.0.4> — `draft = false`,
+      `prerelease = false`, one asset `CraftFromDrawersAndChests-1.0.4.zip`, 64,425 bytes, equal to the local
+      build; tag and `main` both at `4ce6fa6`. Full record: `release-1.0.4-notes.md`. Thunderstore was **not**
+      uploaded (its state could not be checked — the web tools are unavailable here).
 
 ## Execution record (2026-10-16)
 
