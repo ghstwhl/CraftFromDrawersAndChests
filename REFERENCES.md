@@ -4,10 +4,10 @@ Everything this repository compiles or runs against, plus how to regenerate the 
 reference-assembly folder. None of the binary artifacts listed here are distributed with
 this repository.
 
-- **Mod version at time of writing:** 0.1.0
+- **Mod version at time of writing:** 1.0.4
 - **Target framework:** .NET Framework 4.6.2 (`net462`)
-- **Game:** Valheim 1.0.16 (the version whose assemblies the build compiles against)
-- **Last updated:** 2026-10-11
+- **Game:** Valheim 1.0.20 (the version whose assemblies the build compiles against)
+- **Last updated:** 2026-10-16
 
 ---
 
@@ -65,7 +65,7 @@ See [`tools/README.md`](tools/README.md) for every parameter. In short:
 
 | Source | Location / version | Used for |
 |---|---|---|
-| Valheim game assemblies | `<Steam>\steamapps\common\Valheim\Valheim_Data\Managed\` — 1.0.16 | All gameplay API facts (`Container`, `ZNetView`, `ZDO`/`ZDOMan`, `Inventory`, `ZRoutedRpc`, `ZPackage`, `Piece`, `Fireplace`, `Smelter`, `CookingStation`, …) |
+| Valheim game assemblies | `<Steam>\steamapps\common\Valheim\Valheim_Data\Managed\` — 1.0.20 | All gameplay API facts (`Container`, `ZNetView`, `ZDO`/`ZDOMan`, `Inventory`, `ZRoutedRpc`, `ZPackage`, `Piece`, `Fireplace`, `Smelter`, `CookingStation`, …) |
 | Unity engine modules | same `Managed\` folder (`UnityEngine.dll`, `UnityEngine.CoreModule.dll`, `UnityEngine.PhysicsModule.dll`, `UnityEngine.TextRenderingModule.dll`, `UnityEngine.AnimationModule.dll`, `UnityEngine.ParticleSystemModule.dll`, `UnityEngine.AssetBundleModule.dll`, `UnityEngine.UI.dll`, `Unity.TextMeshPro.dll`) | Unity types the mod touches directly; the csproj references these modules explicitly rather than the whole folder |
 
 The four `assembly_*.dll` files are **publicized** at reference-build time (see §3). Publicizing

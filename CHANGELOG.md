@@ -4,6 +4,22 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2026-10-16
+
+Compatibility with Valheim 1.0.20. **No behaviour change.** The update removed 6 and added 21 members
+across `assembly_valheim.dll` — an anti-cheat and save-migration release (`ItemDrop.ResetVariantIfInvalid`
+renamed to `EnsureValid`, a new internal `CheatUtils`, new `Version/*` migration stamps) — and none of them
+is one this mod patches or reflects. No access modifier or signature the mod binds changed anywhere in the
+assembly. The reasoning and the raw evidence are in
+[`docs/sdd/2026-10-11-craft-from-drawers-and-chests/game-1.0.20-compat-analysis.md`](docs/sdd/2026-10-11-craft-from-drawers-and-chests/game-1.0.20-compat-analysis.md).
+
+This build has **not** been run in game yet; it is held for the owner's checks before release.
+
+### Changed
+
+- **The build now compiles against Valheim 1.0.20**, up from 1.0.16 (`ValheimGameVersion` in
+  `Directory.Build.props` — the single source of truth for the reference-assembly folder).
+
 ## [1.0.3] - 2026-10-14
 
 Packaging only — no behaviour change. `1.0.2` is the release that fixed the repeat pull; this one exists
