@@ -42,6 +42,10 @@ The checkboxes below are the full list; this log records which builds the owner 
   pull on the same recipe fetches the materials again each time, so the materials for a second portal
   come from a second click. The other two 1.0.2 checks — a base that can only partly cover the cost, and
   a nearly full inventory — were not reported on this pass.
+- **1.0.4 (Valheim 1.0.20), built 2026-10-16, NOT YET RUN IN GAME:** no code change; the update renamed
+  `ItemDrop.ResetVariantIfInvalid` → `EnsureValid` and added a cheat-flag system, touching none of the 24
+  members this mod binds. Awaiting the checks in "Valheim 1.0.20 update" (at the end of this file) before
+  release.
 
 Settled by owner decision, not defects:
 
@@ -322,3 +326,33 @@ two-player half needs a second player.
 ## Task 15c — AdventureBackpacks coexistence
 
 _Appended when Task 15c completes._
+
+## Valheim 1.0.20 update
+
+Run the **same 1.0.4 build on the server and on the client**. Nothing in this mod changed for the update —
+these checks exist because the game did: it added a cheat-flag system (`CheatUtils`, over the pre-existing
+`ZDOVars.s_cheated`) and new save-version stamps (`Version/World::CheatCleanSlate`,
+`Version/Player::CheatCleanSlate`). The first load of an existing world under the new version runs a
+one-shot clean-slate migration this mod has never been exercised against, which is why check 1 comes first.
+Evidence and reasoning: `game-1.0.20-compat-analysis.md` beside this file.
+
+1. [ ] **Load a pre-update world.** A world saved under the previous version, with existing chests and
+   drawers the mod has already tracked. Expected: it loads, the log still shows
+   `Harmony patched 22 game method(s): …`, every container's contents are intact, and ctrl-click pull
+   works. **Count one known chest before and after the load** — item loss or duplication is the failure
+   this pins.
+2. [ ] **No cheat flag left behind.** After pulling from a chest, storing into one, and placing a piece
+   with storage materials, nothing the mod touched may read as cheated; in game that would surface as the
+   object being cleaned up by the new migration on the next load. Expected: `cfdac status` and a normal
+   save/reload leave everything in place. (The mod neither sets nor reads `CheatUtils`.)
+3. [ ] **Costs are unchanged.** Craft a multi-ingredient recipe and place a piece with materials only in
+   storage. Expected: the whole cost is consumed on every press, a second press still delivers (the 1.0.2
+   fix), and no craft or placement ever costs nothing. Pins the new `Player.GetItemUpgradeChance` /
+   `m_itemUpgradeSeeds` upgrade path against the `ConsumeResources` and `HaveRequirementItems` hooks.
+4. [ ] **Client-side station feeding on a dedicated server.** Have the **client** (not the host) feed a
+   fireplace and a smelter. Expected: fuel and ore arrive, the hover text is right, no spurious
+   `you don't have any …` message, and nothing lands on the ground.
+5. [ ] **MultiUserChest as a non-host client.** Store into and pull from a chest. Expected: contents
+   survive a rejoin — no loss, no duplication, no duplicate delivery.
+
+**Release 1.0.4 only after all five pass.** Any failure goes to `/investigate` — do not patch from a guess.
