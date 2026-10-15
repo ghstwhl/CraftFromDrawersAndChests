@@ -4,11 +4,7 @@ This repository is a **Valheim mod** (BepInEx 5 / HarmonyX / Jötunn, net462).
 
 1. **Follow the shared agent definition:**
 
-   https://github.com/ghstwhl/coding_agents/blob/main/AGENT_VALHEIM_MODDER.md
-
-   Raw text (the `blob/` URL is a web page, not a fetchable document):
-   `https://raw.githubusercontent.com/ghstwhl/coding_agents/main/AGENT_VALHEIM_MODDER.md`.
-   If it cannot be retrieved, ask the user to paste it — do not work from memory of it.
+   raw.githubusercontent.com/ghstwhl/coding_skills/refs/heads/main/skills/valheim-modder/SKILL.md
 
    Treat it as the working doctrine for all Valheim modding tasks here — game-API/IL investigation,
 Harmony/HarmonyX patch rules, the publicized-assembly trap, testing strategy, diagnostics,

@@ -120,7 +120,7 @@ Settled by owner decision, not defects:
 
 ## Task 12 — per-storage switch
 
-- [ ] Set `Toggle storage key` first — it ships **empty**, so the feature is inert until then.
+- [ ] `Toggle storage key` ships as **`x`** (`ConfigModel.DefaultToggleStorageKey`), so the switch is live on a fresh config — clear the entry if you want it inert. **Do not** bind it to a movement key: it applies to whatever storage is under the crosshair, so `W`/`A`/`S`/`D` would switch storage off silently as you walk (changed in 1.0.1; the original port shipped `left shift + e`).
 - [ ] Hover a chest and press it. Expected: the hover text flips to "(pull: off)" and the chest
       stops being a pull source; then confirm an unset key throws nothing.
 - [ ] Have a second player look at the same chest. Expected: they see it off too — the state is
@@ -166,8 +166,8 @@ Settled by owner decision, not defects:
 
 ## Task 14 — ctrl-click pull, messages and flash
 
-- [ ] **Set `Maximum range` before you start.** It defaults to **4**, where CraftFromContainers' `ContainerRange` defaults to **10** (CFC 4.0.7 line 93) — a 2.5× tighter default, so raise it to 10 to compare like-for-like. **Never set it to 0:** CFC treats 0 as *unlimited* (CFC 173), ours treats 0 as *nothing in range* — a known parity gap, tracked as Task 15e.
-- [ ] **`Pull items key` ships as `left ctrl`** (verified in `PluginConfig.cs:132`), so ctrl-click pull works out of the box. **`Toggle storage key` ships empty** (`:134`), so the per-storage switch does nothing until you set it.
+- [ ] **Range: the default is 10 m and `0` means unlimited.** `ConfigModel.DefaultMaxRange = 10f` already matches CraftFromContainers' `ContainerRange` (CFC 4.0.7 line 93), so nothing needs adjusting to compare like-for-like, and `Eligibility.IsWithinRange` treats a **non-positive range as unlimited** (`range <= 0f || sqrDistance <= range * range`) — CFC parity (CFC 173), so **both** gaps Task 15e tracked are closed. Worth one pass in play: set `0`, stand well away from a chest, and confirm it is still used; set `10` and confirm a chest beyond 10 m is not. Unlimited means every storage you own is scanned.
+- [ ] **`Pull items key` ships as `left ctrl`** (`PluginConfig.cs:133`), so ctrl-click pull works out of the box. **`Toggle storage key` ships as `x`** (`PluginConfig.cs:135`, `ConfigModel.DefaultToggleStorageKey`), not empty, so the switch is live on a fresh config — and it must never be a movement key, because it fires on a key-down with whatever storage is under the crosshair (1.0.1).
 - [ ] Ctrl-click a recipe whose materials are in a chest and a drawer. Expected: the recipe is **not** built, the
       ingredients land in your inventory, and the pulled message shows.
 - [x] **Repeat pulls fetch repeat materials (1.0.2, R32).** Ctrl-click the same recipe twice with enough in
@@ -196,8 +196,10 @@ Settled by owner decision, not defects:
 - [ ] With the prevent key held, confirm the crafting panel shows **vanilla** availability — storage no longer makes
       an uncraftable recipe look craftable — and that the panel updates as you hold and release the key.
 - [ ] Type a key with different capitalisation in the config (e.g. `Left Ctrl`). Expected: it still works.
-- [ ] **Not built yet (CFC parity gap):** there is no pull for a *building piece*. CFC pulls the selected piece's
-      materials when you attack with the pull key held. Scheduled as Task 14b — re-confirm after it lands.
+- [ ] **The building-piece pull exists (Task 14b, shipped).** Equip the hammer, select a piece, hold the pull key
+      and press attack: the piece's materials are pulled and the piece is **not** placed, exactly as CFC's
+      `UpdatePlacement_Patch` does. Press again and expect a second piece's worth — 1.0.2 asks for the whole
+      cost on every press (see the 1.0.2 checks above) — and releasing the key restores ordinary placement.
 
 ## Cross-cutting — recipe discovery (found 2026-10-11, needs a decision)
 
