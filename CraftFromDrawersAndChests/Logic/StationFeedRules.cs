@@ -149,6 +149,31 @@ namespace CraftFromDrawersAndChests.Logic
         }
 
         /// <summary>
+        /// Whether a station's multi-input walk should <b>stop</b> at an input, given whether the
+        /// destination inventory holds that input once the attempt for it has run.
+        /// <para>
+        /// The only thing that may stop the walk is the destination holding the input — never "the
+        /// pull returned success". Those are different questions: a pull whose shortfall is already
+        /// covered, or which storage has nothing to add to, succeeds as a <b>satisfied no-op</b>, and
+        /// stopping there skips every later input. That is exactly what happened in 1.0.6: the walk
+        /// stopped at the smelter's first conversion even when storage held none of it, so tin, iron
+        /// and silver could no longer be fed from storage at all (reported from play 2026-10-23). A
+        /// blast furnace, which converts one ore, hid it.
+        /// </para>
+        /// <para>
+        /// This signature deliberately takes <b>one</b> fact. The tempting wrong implementation adds a
+        /// "did anything move?" argument and stops on it; there is no such parameter here so that
+        /// cannot be reintroduced silently.
+        /// </para>
+        /// </summary>
+        /// <param name="destinationHoldsInput">Whether the destination inventory holds one of the
+        /// item an attempt has just run for.</param>
+        public static bool ShouldStopInputWalk(bool destinationHoldsInput)
+        {
+            return destinationHoldsInput;
+        }
+
+        /// <summary>
         /// The hover hint that advertises the fill-all modifier on a smelter's add action: the
         /// bracketed <c>[shift+Use] … max</c> line CraftFromContainers 4.0.7 appends to the smelter's
         /// fuel and ore hovers (CFC <c>BepInExPlugin.cs</c> lines 436-438 and 451-453). Returns null

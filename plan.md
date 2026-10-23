@@ -507,3 +507,49 @@ generator fuel all had it.
       inventory, exactly as vanilla did.
 - [ ] With storage and nothing in hand, the fill behaves exactly as in 1.0.5 (the 1.0.5 checks still hold).
 
+---
+
+# Plan: 1.0.7 — smelter ore feeding from storage stopped at the first conversion (2026-10-23)
+
+**Reported by the owner (on 1.0.6):** scrap iron, then tin ore and scrap copper, are not pulled from item
+ drawers into smelters.
+
+**Cause — a regression introduced by 1.0.6, and never drawer-specific.** 1.0.6 changed `PullFromStorage`
+ to return `pulled` so that a satisfied no-op counts as success — correct for a single-prefab eat (a
+ fireplace's fuel). `PullFirstInputs`, which walks a smelter's `m_conversion` inputs, still stopped at the
+ **first input whose pull returned true**. A pull for an ore the base does not hold is a satisfied no-op,
+ so the walk stopped at the smelter's first conversion (copper) and fed nothing, whatever later ore the
+ storage actually held. A blast furnace has one conversion, which is why 1.0.6's own check passed.
+
+**Fix**
+
+- `StationFeedRules.ShouldStopInputWalk(destinationHoldsInput)` — the walk stops only at an input the
+  inventory actually holds. Its one-argument signature deliberately leaves no room for a "did anything
+  move?" test to creep back in. Two tests pin it.
+- `PullFirstInputs` now takes the inventory and returns the prefab to feed (or null); it attempts each
+  input and stops on `ShouldStopInputWalk(InventoryHolds(...))`. Both multi-input call sites (smelter ore,
+  shield generator fuel) collapse to that single call; the cooking call passes the inventory too.
+- `FirstInputInInventory` deleted (its job moved into the walk); `InventoryHolds` added.
+
+### Task 1: fix the walk
+
+- [x] predicate + tests (`ShouldStopInputWalk`, two cases)
+- [x] `PullFirstInputs` rewritten; both lambdas simplified; cooking call updated; dead helper removed
+- [x] class remarks and `PullFromStorage` comment record why "satisfied" must not decide the walk
+
+### Task 2: version + docs
+
+- [x] 1.0.7 in `ModInfo.cs`/`manifest.json` and the CHANGELOG (including that it was a 1.0.6 regression)
+- [x] owner checklist in `author-verify.md`
+
+### Task 3 (owner): in-game checklist
+
+- [ ] Smelter, **tin ore only in a drawer**, nothing in hand, plain `E`: one tin is queued and the drawer
+      loses exactly one.
+- [ ] Same with **scrap iron in a chest** while the base holds no copper: one scrap iron is queued.
+- [ ] With both copper and tin in storage, copper is used first (the station's own conversion order).
+- [ ] Fill-all with a non-first ore in storage: the queue fills to capacity.
+- [ ] The 1.0.6 checks still hold (flametal in hand + shift-E fills a blast furnace).
+- [ ] No losses: units queued == units removed from inventory + storage; no "station did not take a fed"
+      or "could not remove" line in the log.
+

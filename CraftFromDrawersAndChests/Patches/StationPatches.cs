@@ -77,7 +77,11 @@ namespace CraftFromDrawersAndChests.Patches
     /// flametal per press). Every one of those guards goes through
     /// <see cref="StationFeedRules.ShouldAttemptFeed"/>, and a pull that storage has nothing to add to
     /// counts as <b>satisfied</b> rather than failed, so the fill goes on to feed what the player is
-    /// carrying rather than stopping at zero. CFC additionally
+    /// carrying rather than stopping at zero. That satisfied result must never decide the <b>walk</b>
+    /// across a station's several inputs — only the inventory holding the input may end it (see
+    /// <see cref="StationFeedRules.ShouldStopInputWalk"/>, and the remark on
+    /// <see cref="PullFirstInputs"/>): 1.0.6 conflated the two and made every smelter ore past the first
+    /// conversion unfeedable from storage. CFC additionally
     /// lets the modifier override its prevent key on the smelter patches (<c>!AllowByKey() &amp;&amp;
     /// !pullAll</c>, lines 465 and 582) but not on the fireplace (line 280); this port keeps the prevent
     /// gate authoritative everywhere and documents that as a deliberate divergence — see the gating
@@ -431,13 +435,8 @@ namespace CraftFromDrawersAndChests.Patches
             Vector3 origin = __instance.transform.position;
             int fed = FeedStation(player, inventory, ___m_nview, flags,
                 StationFeedRules.FillAmount(fillAll, remaining), AddOreRpc,
-                wanted =>
-                {
-                    if (!PullFirstInputs(player, origin, inputs, flags.OreDisallowTypes, flags, wanted, fillAll))
-                        return null;
-
-                    return FirstInputInInventory(inventory, inputs);
-                },
+                wanted => PullFirstInputs(
+                    player, inventory, origin, inputs, flags.OreDisallowTypes, flags, wanted, fillAll),
                 () => QueueRemaining(__instance));
 
             // Swallow the interaction once anything was queued so vanilla does not add a second item,
@@ -449,30 +448,19 @@ namespace CraftFromDrawersAndChests.Patches
         }
 
         /// <summary>
-        /// The prefab name of the first of a station's input types the player's inventory currently
-        /// holds, or null. Used by the fill path to name the item it just pulled, so the ore RPC is told
-        /// the prefab the smelter is being fed (and, for a shield generator, so the unit fed is a fuel
-        /// the generator accepts); it walks the station's own input order, the order vanilla's discovery
-        /// and CraftFromContainers' loop both use.
+        /// Whether <paramref name="inventory"/> holds any of <paramref name="item"/>, matched by the
+        /// item's shared name through the public <c>Inventory.GetItem(sharedName, -1, false)</c> — the
+        /// same test vanilla's own station discovery makes and CraftFromContainers uses (its lines
+        /// 468-479). Quality is deliberately unconstrained: the source half of a shortfall counts by
+        /// shared name alone, so it can only ever over-state what is held.
         /// </summary>
-        private static string FirstInputInInventory(Inventory inventory, List<ItemDrop> inputs)
+        private static bool InventoryHolds(Inventory inventory, ItemDrop item)
         {
-            if (inventory == null || inputs == null)
-                return null;
+            if (inventory == null || !HasItemData(item))
+                return false;
 
-            string sharedName = null;
-            for (int i = 0; i < inputs.Count; i++)
-            {
-                ItemDrop input = inputs[i];
-                if (!HasItemData(input))
-                    continue;
-
-                sharedName = SharedName(input);
-                if (inventory.GetItem(sharedName, -1, false) != null)
-                    return PrefabName(input);
-            }
-
-            return null;
+            string sharedName = SharedName(item);
+            return !string.IsNullOrEmpty(sharedName) && inventory.GetItem(sharedName, -1, false) != null;
         }
 
         /// <summary>
@@ -611,13 +599,8 @@ namespace CraftFromDrawersAndChests.Patches
             Vector3 origin = __instance.transform.position;
             int fed = FeedStation(player, inventory, ___m_nview, flags,
                 StationFeedRules.FillAmount(fillAll, remaining), AddFuelRpc,
-                wanted =>
-                {
-                    if (!PullFirstInputs(player, origin, fuels, flags.FuelDisallowTypes, flags, wanted, fillAll))
-                        return null;
-
-                    return FirstInputInInventory(inventory, fuels);
-                },
+                wanted => PullFirstInputs(
+                    player, inventory, origin, fuels, flags.FuelDisallowTypes, flags, wanted, fillAll),
                 () => ShieldFuelRemaining(__instance));
 
             // Swallow the interaction once anything was fed so vanilla does not add a second unit, but
@@ -838,7 +821,7 @@ namespace CraftFromDrawersAndChests.Patches
             // CraftFromContainers' cooking-station patch has no fill-all branch either, so this
             // always asks for one.
             PullFirstInputs(
-                player, __instance.transform.position,
+                player, inventory, __instance.transform.position,
                 inputs, flags.OreDisallowTypes, flags, 1, false);
             return true;
         }
@@ -1199,25 +1182,44 @@ namespace CraftFromDrawersAndChests.Patches
             // `pulled` alone: a pull the destination already covers is a satisfied no-op, and the feed
             // must carry on to consume what the player is holding. Requiring `requested` here is what
             // made a held fill stop at zero when the stock was in the inventory rather than a chest.
+            //
+            // The value says "the destination is satisfied for THIS prefab", which is NOT the same as
+            // "this prefab is now in the inventory" (a full inventory caps the request to nothing). A
+            // caller that walks several candidate items must therefore decide where to stop from the
+            // inventory itself — see PullFirstInputs and StationFeedRules.ShouldStopInputWalk.
             return pulled;
         }
 
         /// <summary>
-        /// Pulls <paramref name="amount"/> of the first input in <paramref name="inputs"/> that storage
-        /// can supply <b>or that the destination already holds</b>, skipping any input whose prefab name
-        /// is on <paramref name="disallowTypes"/> (and taking nothing when the request is zero). Walks
-        /// the station's own input order, so a smelter that accepts several ores asks for the first one
-        /// the base can actually provide, exactly as CraftFromContainers' loop over <c>m_conversion</c>
-        /// does. The destination clause is what lets a held fill feed ore the player is already carrying,
-        /// where storage has nothing to add.
+        /// Pulls <paramref name="amount"/> of the first of a station's <paramref name="inputs"/> that the
+        /// destination inventory ends up holding, walking them in the station's own order, and returns
+        /// that input's prefab name — or null when it ends up holding none.
+        /// <para>
+        /// <b>The walk stops on the destination, never on the pull's result.</b> A pull that moved
+        /// nothing is still a success when the destination already covers the request (a satisfied
+        /// no-op, see <see cref="PullFromStorage"/>), so treating "the pull returned true" as "stop
+        /// here" skips every input after the first. 1.0.6 shipped exactly that: a smelter whose storage
+        /// held tin but no copper walked no further than copper and fed nothing, so tin, iron and silver
+        /// could not be fed from storage at all (reported from play 2026-10-23). A blast furnace — one
+        /// conversion — hid it. Only a destination that actually holds the input may end the walk; see
+        /// <see cref="StationFeedRules.ShouldStopInputWalk"/>.
+        /// </para>
+        /// <para>
+        /// Skips any input whose prefab name is on <paramref name="disallowTypes"/>, and takes nothing
+        /// when the request is zero. Walking the station's own order is CraftFromContainers' loop over
+        /// <c>m_conversion</c> (its lines 487-510): a smelter that accepts several ores asks for the
+        /// first one the base can actually provide, or the first one the player is already carrying.
+        /// </para>
         /// </summary>
+        /// <param name="inventory">The destination the stock must end up in; null feeds nothing.</param>
         /// <param name="fillUpTo">Whether the request is a fill: see <see cref="PullFromStorage"/>.</param>
-        private static bool PullFirstInputs(
-            Player player, Vector3 origin, List<ItemDrop> inputs, string disallowTypes, FeatureFlags flags,
-            int amount, bool fillUpTo)
+        /// <returns>The prefab name of the input to feed, or null when there is nothing to feed.</returns>
+        private static string PullFirstInputs(
+            Player player, Inventory inventory, Vector3 origin, List<ItemDrop> inputs,
+            string disallowTypes, FeatureFlags flags, int amount, bool fillUpTo)
         {
-            if (amount <= 0)
-                return false;
+            if (amount <= 0 || inventory == null)
+                return null;
 
             for (int i = 0; i < inputs.Count; i++)
             {
@@ -1232,10 +1234,14 @@ namespace CraftFromDrawersAndChests.Patches
                 if (StationFeedRules.IsDisallowedType(disallowTypes, prefab))
                     continue;
 
-                if (PullFromStorage(player, origin, prefab, input, flags, amount, fillUpTo))
-                    return true;
+                // Whatever this attempt did — moved items, or was a satisfied no-op — the only question
+                // for the walk is whether the inventory now holds this input.
+                PullFromStorage(player, origin, prefab, input, flags, amount, fillUpTo);
+
+                if (StationFeedRules.ShouldStopInputWalk(InventoryHolds(inventory, input)))
+                    return prefab;
             }
-            return false;
+            return null;
         }
 
         /// <summary>The input item of each of a smelter's conversions, in the order the smelter declares them.</summary>

@@ -4,6 +4,21 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] - 2026-10-23
+
+### Fixed
+
+- **Ore feeding from chests and drawers is restored for every ore, not just the first one.** 1.0.6's
+  fill-all fix made a pull that moved nothing count as "satisfied" so that a held fill could feed material
+  already in your inventory. The smelter's walk over the ores it accepts then read that "satisfied" as
+  "storage supplied this ore" and stopped at the **first** ore it tried — copper — even when the base held
+  none of it. In practice tin, scrap iron, silver, scrap copper and every other ore past the first could
+  not be fed from storage at all. A blast furnace converts one ore, which is why the 1.0.6 check passed.
+  The walk now stops only at an ore that actually reached your inventory.
+- **This was a 1.0.6 regression, not a drawer problem** — chests were affected identically. 1.0.6's own
+  fixes (the fill-all key using material you already carry, and shield generators fed from storage) are
+  unchanged and still work.
+
 ## [1.0.6] - 2026-10-23
 
 ### Fixed

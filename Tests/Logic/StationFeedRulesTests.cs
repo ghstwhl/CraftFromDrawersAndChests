@@ -158,6 +158,23 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             Assert.That(StationFeedRules.ShouldAttemptFeed(true, false), Is.True);
         }
 
+        // ---------------- ShouldStopInputWalk (1.0.7) ----------------
+
+        [Test]
+        public void ShouldStopInputWalk_StopsWhenTheDestinationHoldsTheInput()
+        {
+            Assert.That(StationFeedRules.ShouldStopInputWalk(true), Is.True);
+        }
+
+        [Test]
+        public void ShouldStopInputWalk_DoesNotStopWhenTheDestinationHoldsNothing()
+        {
+            // The 1.0.6 regression: the walk stopped when the *pull* returned success, and a pull
+            // storage has nothing to add to is a satisfied no-op. A smelter whose storage held tin
+            // but no copper therefore never walked past copper, and nothing was ever fed.
+            Assert.That(StationFeedRules.ShouldStopInputWalk(false), Is.False);
+        }
+
         // ---------------- FillAllHint (Task 15b) ----------------
 
         [Test]

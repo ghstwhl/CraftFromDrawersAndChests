@@ -413,3 +413,23 @@ fireplace's and a smelter's fuel and a shield generator's fuel.
 6. [ ] **Nothing lost.** Watch one station and one inventory count across the whole pass: units queued must
    equal units removed from the inventory plus units taken from storage, and the log must contain no
    "station did not take a fed" or "could not remove" line.
+
+## 1.0.7 — smelter ore from storage stopped at the first conversion
+
+Reported from play on 2026-10-23, after 1.0.6: scrap iron, then tin ore and scrap copper, were not pulled
+from drawers into smelters. **A 1.0.6 regression, and not drawer-specific** — chests failed identically.
+1.0.6 made a pull that moved nothing report "satisfied", and the smelter's walk over its accepted ores read
+that as "storage supplied this ore" and stopped at the first conversion it tried (copper), whatever later
+ore the storage actually held. A blast furnace converts one ore, which is why 1.0.6's own check passed.
+
+1. [ ] **Non-first ore, drawer.** Tin ore **only in a drawer**, nothing in hand. Plain `E` on a smelter.
+   Expected: one tin is queued and the drawer loses exactly one. (Also try scrap iron, silver and any modded
+   ore — each is a separate row of the same smelter's conversion list.)
+2. [ ] **Non-first ore, chest.** Same, with the ore in a chest and no copper anywhere. Expected: it is
+   queued.
+3. [ ] **Order is still the station's.** Copper **and** tin in storage, nothing in hand. Expected: copper is
+   used first, as the smelter's own conversion order says.
+4. [ ] **Fill-all, non-first ore.** Hold the modifier with tin only in storage: the queue fills to capacity.
+5. [ ] **1.0.6 still holds.** Flametal in the inventory, shift-E on a blast furnace: fills in one press.
+6. [ ] **Nothing lost.** Units queued == units removed from inventory + storage, and no "station did not
+   take a fed" / "could not remove" line in the log.
