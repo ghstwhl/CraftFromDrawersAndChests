@@ -447,4 +447,13 @@ Tasks 1–3 complete; nothing committed or pushed yet.
   `1.0.5`. **Not published** — the owner tests first.
 - `RPC_AddFuel` → `SetFuel(GetFuel()+1)` → `RPC_SetFuel` → `ZDO.Set(s_fuel, …)` is the same chain the
   smelter uses, so the feed's per-unit "did the station take it" check reads a settled value.
+- **Confirmed in game** by the owner on 2026-10-23, Valheim 1.0.20 (`Modheim`, session at 21:53):
+  `Loading [CraftFromDrawersAndChests 1.0.5]`, `Harmony patched 24 game method(s)` including
+  `ShieldGenerator.OnAddFuel` and `ShieldGenerator.OnHoverAddFuel`, **0 errors**. The owner confirmed the
+  fix works.
+- **Released 2026-10-23** at the owner's instruction: tag `v1.0.5` (annotated, `8fb09c8`) on `141315e`,
+  pushed; GitHub release published as <https://github.com/ghstwhl/CraftFromDrawersAndChests/releases/tag/v1.0.5>
+  — API-verified `draft=false`, `prerelease=false`, asset `CraftFromDrawersAndChests-1.0.5.zip`,
+  65,563 bytes, digest equal to the local zip. Record: `release-1.0.5-notes.md`; body:
+  `release-1.0.5-body.md`. **Thunderstore not uploaded** (state unknown here).
 
