@@ -335,3 +335,116 @@ Tasks 1–4 complete and committed locally; **nothing pushed**.
 Final verified state: `BUILD OK - CraftFromDrawersAndChests 1.0.4` in Debug and Release; `dotnet test` 262/262;
 24/24 touchpoints present in the 1.0.20 publicized assembly; the packaged DLL reports `1.0.4`. Left alone
 uncommitted, as the owner's own work: `AGENTS.md`, the 12-line `author-verify.md` correction, and this file.
+
+---
+
+# Plan: 1.0.5 — shield generators are not fed from storage (2026-10-23)
+
+> **For agentic workers:** Same loop as above. Track steps with `- [ ]`.
+
+**Goal:** make `piece_shieldgenerator` behave like every other fuelled station: pull its fuel from
+storage in range of the **generator**, and let the fill-all modifier feed the whole remaining capacity.
+
+**Reported by the owner**, from a local session on Valheim 1.0.20 (`Modheim` profile, log
+`2026-10-23 21:39`): feeding `BoneFragments` to a `piece_shieldgenerator` pulls nothing from nearby
+containers (or the backpack); the fill-all hint is absent; the modifier "only fills one item".
+
+**Established evidence (from the shipping assembly, `docs/sdd/.../tools/cecil.ps1` + `dump-api.ps1`)**
+
+- `assembly_valheim.dll` (1.0.20, unpublicized) declares `ShieldGenerator`, a `MonoBehaviour` that is the
+  fourth fuelled station. Its fuel API is `m_fuelItems : List<ItemDrop>` (**public**, a *list* of fuel
+  prefabs — a smelter has one `m_fuelItem`), `m_maxFuel : Int32` (public), `GetFuel() : Single`
+  (**private**), `RPC_AddFuel(Int64)` (private; adds exactly **1** fuel per call and is registered in
+  `Start`), `m_add : String` (public — the hover's action word), `m_nview : ZNetView` (**private**).
+- The interaction is **not** `Interact` (that fires the shield: `m_enableAttack` + `RPC_Attack`). Fuel
+  goes through `OnAddFuel(Switch, Humanoid, ItemData)` — **private**, and its only two call sites in the
+  whole assembly are `ShieldGenerator.Start` and `Smelter.Awake`, i.e. both wire it into a `Switch`'s
+  `m_onUse`. `Switch.Interact` invokes `m_onUse(this, user, null)`; `Switch.UseItem` invokes
+  `m_onUse(this, user, item)`. The hover is `OnHoverAddFuel()` (private, also wired in `Start`, into
+  `Switch.m_onHover`; `Switch.GetHoverText` returns it).
+- Vanilla's `OnAddFuel` removes **one** item and adds **one** fuel — which is exactly why the owner saw
+  "shift-E adds one item": nothing in this mod patches `ShieldGenerator`, so the modifier has no effect.
+- Cause: `StationPatches` patches `Fireplace`, `Smelter` and `CookingStation` only. `Smelter` and
+  `ShieldGenerator` are the **only** types in the assembly that own an `OnAddFuel`, so the generator is
+  the single station the mod left out. Container *collection* is origin-based and already correct, so
+  nothing else needs changing.
+
+**Decision — reuse `PullFuel` and `FuelDisallowTypes`.** A generator's fuel is fuel; CraftFromContainers
+4.0.7 has no shield-generator patch to copy, so inventing a fourth setting would be new surface with no
+oracle. Documented in the class remarks.
+
+**Not in scope — the Adventure Backpacks backpack.** A backpack is deliberately **not** an
+`IStorageSource` (`docs/sdd/.../backpack-requirement.md`, the owner's own requirement: never pull items
+out of a player's own backpack). Adventure Backpacks extends `Inventory.HaveItem`/`RemoveItem` only
+inside its `CraftingContext`, which a `Switch` interaction never opens, so backpack fuel is not
+consumable on this path by either mod. Reported to the owner rather than changed unilaterally.
+
+**Testing note:** all the arithmetic this feature needs (`RemainingFuelCapacity`, `FillAmount`,
+`IsDisallowedType`, `FillAllHint`) is already pure and already pinned in
+`Tests/Logic/StationFeedRulesTests.cs`; the new code is purely the game-facing seam. Per the Valheim
+modder doctrine §7, a game-facing seam is verified by artifact checks (§9) plus the owner's in-game pass —
+not by a unit test, which the `Logic/**`-only test project cannot write (it has no game assemblies).
+
+### Task 1: feed `ShieldGenerator` from storage
+
+**Files:** Modify `CraftFromDrawersAndChests/Patches/StationPatches.cs`
+
+- [x] **Step 1:** resolve `ShieldGenerator.GetFuel` through `Resolve` (private) and add
+      `ShieldFuelRemaining`, mirroring `SmelterFuelRemaining`.
+- [x] **Step 2:** add a `[HarmonyPrefix]` on `ShieldGenerator.OnAddFuel` that mirrors the smelter's fuel
+      patch: bail on a held `item`, on `PullFuel` off, on the prevent key, on a full generator, and when
+      the player already carries one of `m_fuelItems` (unless fill-all is held); otherwise pull the first
+      fuel storage can supply (range origin = the generator) and feed it through `RPC_AddFuel` one unit
+      per invocation, confirming the generator's remaining capacity fell before removing another unit.
+- [x] **Step 3:** add a `[HarmonyPostfix]` on `ShieldGenerator.OnHoverAddFuel` appending the fill-all
+      hint, with `m_add` as the action word.
+- [x] **Step 4:** update the class remarks and the `PullSetting.Fuel` doc to name the generator.
+
+### Task 2: document and version the build
+
+- [x] **Step 1:** `PluginConfig` — `Pull fuel` help text names shield generators.
+- [x] **Step 2:** `README.md` — the station-feeding bullet names shield generators.
+- [x] **Step 3:** bump `ModInfo.Version` and `manifest.json` `version_number` to `1.0.5` together, and add
+      the `1.0.5` CHANGELOG entry (the build fails if the two versions disagree).
+
+### Task 3: verify without the game
+
+- [x] **Step 1:** `powershell -ExecutionPolicy Bypass -File .\tools\Build.ps1 -Configuration Debug` →
+      `BUILD OK - CraftFromDrawersAndChests 1.0.5 (Debug)` (MSB3274 is expected).
+- [x] **Step 2:** `dotnet test Tests\CraftFromDrawersAndChests.Tests.csproj` → 262 passed / 0 failed.
+- [x] **Step 3:** confirm both patch targets exist with the expected signatures in the shipping assembly
+      (`cecil.ps1 -Type ShieldGenerator -Method OnAddFuel -Definitions`, `-Method OnHoverAddFuel`), and
+      that the built DLL names `ShieldGenerator` (ASCII scan — attribute strings are UTF-8).
+
+### Task 4 (owner): in-game checklist
+
+- [ ] Stand at a `piece_shieldgenerator` with `BoneFragments` only in a nearby chest: one `E` on the
+      fuel switch adds **one** fuel and takes **one** from the chest; the chest stock falls by exactly
+      the fuel added.
+- [ ] Hold the fill-all key (`left shift` by default) and press `E`: the generator fills to `m_maxFuel`
+      and the hover shows the `[shift+E] Add max` line.
+- [ ] A nearly full generator is topped up to exactly full, never over; a full generator takes nothing.
+- [ ] Range is measured from the **generator**, not the player: a chest beside the generator feeds it
+      while the player stands back; a chest beside the *player* but out of the generator's range does not.
+- [ ] With `Pull fuel` off, the generator behaves exactly as vanilla did.
+- [ ] The startup log reads `Harmony patched 24 game method(s)` including
+      `ShieldGenerator.OnAddFuel` and `ShieldGenerator.OnHoverAddFuel`.
+
+## Execution record (2026-10-23)
+
+Tasks 1–3 complete; nothing committed or pushed yet.
+
+- Debug build: `BUILD OK - CraftFromDrawersAndChests 1.0.5 (Debug)`, 94,208-byte DLL.
+- `dotnet test`: **262 passed / 0 failed**.
+- Shipping signatures re-read with the sanctioned probe:
+  `private ShieldGenerator::OnAddFuel(Switch, Humanoid, ItemData) : Boolean` and
+  `private ShieldGenerator::OnHoverAddFuel() : String`; `GetFuel()` is private, `m_fuelItems`/`m_maxFuel`/
+  `m_add` are public, `m_nview` is private (hence `___m_nview` injection).
+- Built DLL (Debug and packaged Release, identical SHA256 `E01592D5…`): ASCII-scannable `ShieldGenerator`
+  metadata and `1.0.5` attribute string; `RPC_AddFuel` present as a UTF-16 literal (the RPC name is a
+  `#US`-heap string, so an ASCII scan of it is a false negative — scan both encodings).
+- Release package: `Release\CraftFromDrawersAndChests-1.0.5.zip`, 65,563 bytes, packaged manifest reads
+  `1.0.5`. **Not published** — the owner tests first.
+- `RPC_AddFuel` → `SetFuel(GetFuel()+1)` → `RPC_SetFuel` → `ZDO.Set(s_fuel, …)` is the same chain the
+  smelter uses, so the feed's per-unit "did the station take it" check reads a settled value.
+

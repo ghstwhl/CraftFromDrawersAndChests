@@ -100,7 +100,7 @@ namespace CraftFromDrawersAndChests
             pullByDistance = Bind(config, ConfigModel.SectionServer, ConfigModel.PullByDistance, ConfigModel.DefaultPullByDistance,
                 "Pull from the nearest storage first.");
             pullFuel = Bind(config, ConfigModel.SectionServer, ConfigModel.PullFuel, true,
-                "Let the mod feed fuel to fireplaces and smelters.");
+                "Let the mod feed fuel to fireplaces, smelters and shield generators.");
             pullOre = Bind(config, ConfigModel.SectionServer, ConfigModel.PullOre, true,
                 "Let the mod feed ore to smelters.");
             pullCooking = Bind(config, ConfigModel.SectionServer, ConfigModel.PullCooking, true,

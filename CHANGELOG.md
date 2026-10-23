@@ -4,6 +4,25 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2026-10-23
+
+### Fixed
+
+- **Shield generators are fed from storage.** `piece_shieldgenerator` was the one fuelled station this mod
+  did not patch, so its fuel switch behaved exactly as vanilla: it took a single `BoneFragments` from your
+  inventory per press, pulled nothing from nearby chests or drawers, and the fill-all key did nothing. The
+  generator's fuel now comes from storage within range **of the generator**, through the same pull every
+  other station uses, and the fill-all key fills it to capacity in one press. It is gated on the same
+  `Pull fuel` setting and `Fuel disallow types` list as a fire or a smelter, and its hover now shows the
+  `[shift+Use] … max` line.
+- Nothing else changes: a shield generator you cannot reach storage from, a full one, and one with
+  `Pull fuel` off all behave exactly as before.
+
+**The Adventure Backpacks backpack is still not a source for station fuel.** A backpack is deliberately
+never treated as storage — that is how this mod was specified — and Adventure Backpacks only exposes its
+contents to the game's own counts inside a crafting action, which a fuel switch is not. Move the fuel to a
+chest, or to your own inventory, for a station to use it.
+
 ## [1.0.4] - 2026-10-16
 
 Compatibility with Valheim 1.0.20. **No behaviour change.** The update removed 6 and added 21 members

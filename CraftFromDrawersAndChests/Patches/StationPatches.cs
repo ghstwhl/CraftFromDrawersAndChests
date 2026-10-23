@@ -51,8 +51,10 @@ namespace CraftFromDrawersAndChests.Patches
     /// </para>
     /// <para>
     /// <b>Gating.</b> Each patch reads its own setting from the shared <c>PluginConfig.Flags</c>
-    /// snapshot — <c>PullFuel</c> for the fireplace, the smelter's fuel and the cooking station's
-    /// fuel, <c>PullOre</c> for the smelter's ore, <c>PullCooking</c> for the cooking station's food —
+    /// snapshot — <c>PullFuel</c> for the fireplace, the smelter's fuel, the cooking station's fuel and
+    /// the shield generator's fuel (a generator's fuel is fuel, and CraftFromContainers has no
+    /// generator patch to copy a fourth setting from), <c>PullOre</c> for the smelter's ore,
+    /// <c>PullCooking</c> for the cooking station's food —
     /// and the mod-enabled flag, and obeys <see cref="PullKeyPatches.AllowByKey"/>, the same prevent
     /// gate the pull key obeys. CraftFromContainers gates its turret patch on the mod-enabled flag and
     /// the prevent key alone: it has <b>no</b> turret setting, and this port adds none (see the
@@ -90,6 +92,21 @@ namespace CraftFromDrawersAndChests.Patches
     /// <see cref="StationFeedRules.FillAllHint"/> and the two postfixes mirror CFC's own; the fireplace,
     /// the cooking station and the turret have no such hint in CraftFromContainers and get none here.
     /// </para>
+    /// <para>
+    /// <b>Shield generators (1.0.5).</b> <c>ShieldGenerator</c> is the fourth fuelled station and the
+    /// only one CraftFromContainers 4.0.7 has no patch for. Its fuel is <b>not</b> added by
+    /// <c>Interact</c> (that fires the shield) but by the private
+    /// <c>OnAddFuel(Switch, Humanoid, ItemData)</c>, which <c>Start</c> wires into its add-fuel
+    /// <c>Switch</c>: <c>Switch.Interact</c> calls it with a null item and <c>Switch.UseItem</c> with
+    /// the held one. Its hover is the private <c>OnHoverAddFuel()</c>, wired to the same switch's
+    /// <c>m_onHover</c> — so this station takes exactly the smelter's two fuel patches' shape. It
+    /// differs in one place: it declares a <b>list</b> of fuel prefabs (<c>m_fuelItems</c>) where a
+    /// smelter declares one <c>m_fuelItem</c>, so the request walks that list and asks storage for the
+    /// first fuel it can supply — the same walk the smelter's ore patch makes over <c>m_conversion</c>.
+    /// Vanilla's own add removes one item and adds one fuel per interaction, which is why an unpatched
+    /// generator adds a single fuel per press however the fill-all key is held (reported from play
+    /// 2026-10-23).
+    /// </para>
     /// </summary>
     // A class-level [HarmonyPatch] is REQUIRED here - see the note on CraftPatches. Without it every
     // method-level target in this file is silently skipped and no station ever sees storage.
@@ -99,9 +116,9 @@ namespace CraftFromDrawersAndChests.Patches
         // Fully qualified: UnityEngine.Logger exists too, so the bare name is ambiguous.
         private static readonly ManualLogSource Log = BepInEx.Logging.Logger.CreateLogSource(ModInfo.ModName);
 
-        // Six of the guards below read vanilla state through methods that are PRIVATE in the shipping
+        // Seven of the guards below read vanilla state through methods that are PRIVATE in the shipping
         // assembly (assembly_valheim.dll) even though the publicized reference this project compiles
-        // against reports them public: Smelter.GetQueueSize/GetFuel and
+        // against reports them public: Smelter.GetQueueSize/GetFuel, ShieldGenerator.GetFuel and
         // CookingStation.GetFuel/HaveDoneItem/GetFreeSlot/IsFireLit. A direct call binds at compile time
         // and is unresolvable at runtime, so each goes through reflection instead. The MethodInfos are
         // resolved once here and cached in these fields, because the guards run inside per-frame station
@@ -116,6 +133,7 @@ namespace CraftFromDrawersAndChests.Patches
         // InventoryHasInput below.
         private static readonly MethodInfo SmelterGetQueueSize = Resolve(typeof(Smelter), "GetQueueSize");
         private static readonly MethodInfo SmelterGetFuel = Resolve(typeof(Smelter), "GetFuel");
+        private static readonly MethodInfo ShieldGeneratorGetFuel = Resolve(typeof(ShieldGenerator), "GetFuel");
         private static readonly MethodInfo CookingStationGetFuel = Resolve(typeof(CookingStation), "GetFuel");
         private static readonly MethodInfo CookingStationHaveDoneItem = Resolve(typeof(CookingStation), "HaveDoneItem");
         private static readonly MethodInfo CookingStationGetFreeSlot = Resolve(typeof(CookingStation), "GetFreeSlot");
@@ -419,10 +437,11 @@ namespace CraftFromDrawersAndChests.Patches
         }
 
         /// <summary>
-        /// The prefab name of the first of a smelter's input types the player's inventory currently
+        /// The prefab name of the first of a station's input types the player's inventory currently
         /// holds, or null. Used by the fill path to name the item it just pulled, so the ore RPC is told
-        /// the prefab the smelter is being fed; it walks the smelter's own <c>m_conversion</c> order, the
-        /// order vanilla's discovery and CraftFromContainers' loop both use.
+        /// the prefab the smelter is being fed (and, for a shield generator, so the unit fed is a fuel
+        /// the generator accepts); it walks the station's own input order, the order vanilla's discovery
+        /// and CraftFromContainers' loop both use.
         /// </summary>
         private static string FirstInputInInventory(Inventory inventory, List<ItemDrop> inputs)
         {
@@ -513,6 +532,104 @@ namespace CraftFromDrawersAndChests.Patches
                 __result = true;
 
             return fed <= 0;
+        }
+
+        /// <summary>
+        /// Feeds a shield generator's fuel from storage near the generator. There is no
+        /// CraftFromContainers 4.0.7 patch to mirror here — its 4.0.7 release predates the piece — so
+        /// this follows <b>this class's own smelter-fuel patch</b> step for step, which is the same
+        /// vanilla shape: <c>OnAddFuel(Switch, Humanoid, ItemData)</c> is the method vanilla itself
+        /// wires into the add-fuel switch, it takes a null item when the player presses use on the
+        /// switch and the held item when the player uses one, and it adds exactly one fuel per call.
+        /// <para>
+        /// <b>The one difference is the fuel list.</b> A generator declares <c>m_fuelItems</c>, a list,
+        /// where a smelter declares a single <c>m_fuelItem</c>; so the "player already carries the
+        /// fuel" guard and the request both walk the list, asking storage for the first fuel it can
+        /// supply — the same walk the smelter's ore patch makes over <c>m_conversion</c>.
+        /// </para>
+        /// <para>
+        /// As on the fireplace and the smelter, the fill-all modifier widens the request from one unit
+        /// to the generator's whole remaining capacity and lifts the "already carrying fuel" guard;
+        /// the fuel is fed straight into the generator (one <c>RPC_AddFuel</c> per unit, with the unit
+        /// removed from the inventory first) rather than left there for vanilla, so a full inventory
+        /// never blocks the feed.
+        /// </para>
+        /// </summary>
+        [HarmonyPatch(typeof(ShieldGenerator), "OnAddFuel")]
+        [HarmonyPrefix]
+        private static bool ShieldGeneratorOnAddFuelPrefix(
+            ShieldGenerator __instance, Humanoid user, ItemDrop.ItemData item, ZNetView ___m_nview,
+            ref bool __result)
+        {
+            // A held fuel item is vanilla's: the player deliberately used it on the switch, and
+            // Switch.UseItem already named it, so vanilla adds that one unit exactly as before.
+            if (__instance == null || item != null)
+                return true;
+
+            FeatureFlags flags = Enabled(PullSetting.Fuel);
+            if (flags == null)
+                return true;
+
+            Player player = user as Player;
+            Inventory inventory = player != null ? player.GetInventory() : null;
+            if (inventory == null)
+                return true;
+
+            // ShieldGenerator.GetFuel() is private in the shipping assembly: reflect, fail closed.
+            if (!TryInvokeFloat(ShieldGeneratorGetFuel, __instance, out float generatorFuel))
+                return true;
+
+            // Vanilla's own full boundary is GetFuel() > m_maxFuel - 1, which is the same boundary
+            // RemainingFuelCapacity expresses for the fireplace and the smelter's fuel.
+            int remaining = StationFeedRules.RemainingFuelCapacity(__instance.m_maxFuel, generatorFuel);
+            if (remaining <= 0)
+                return true;
+
+            List<ItemDrop> fuels = FuelItems(__instance.m_fuelItems);
+            if (fuels.Count == 0)
+                return true;
+
+            // As on the fireplace and the smelter, the fill-all modifier lifts the "the player already
+            // carries the fuel" guard. Vanilla's own branch does the same search with HaveItem, so
+            // this only decides whether the pull runs, never what vanilla does afterwards.
+            bool fillAll = FillAllHeld(flags);
+            if (!fillAll && InventoryHasInput(inventory, fuels))
+                return true;
+
+            Vector3 origin = __instance.transform.position;
+            int fed = FeedStation(player, inventory, ___m_nview, flags,
+                StationFeedRules.FillAmount(fillAll, remaining), AddFuelRpc,
+                wanted =>
+                {
+                    if (!PullFirstInputs(player, origin, fuels, flags.FuelDisallowTypes, flags, wanted, fillAll))
+                        return null;
+
+                    return FirstInputInInventory(inventory, fuels);
+                },
+                () => ShieldFuelRemaining(__instance));
+
+            // Swallow the interaction once anything was fed so vanilla does not add a second unit, but
+            // report it as handled - the same shape the smelter's fuel prefix uses.
+            if (fed > 0)
+                __result = true;
+
+            return fed <= 0;
+        }
+
+        /// <summary>
+        /// Appends the fill-all hint to a shield generator's add-fuel hover, which vanilla wires into
+        /// the add-fuel switch's <c>m_onHover</c> (so <c>Switch.GetHoverText</c> returns it). The action
+        /// word is the generator's own <c>m_add</c> — the same string vanilla puts after the key in
+        /// <c>OnHoverAddFuel</c> — rather than a token invented here.
+        /// </summary>
+        [HarmonyPatch(typeof(ShieldGenerator), "OnHoverAddFuel")]
+        [HarmonyPostfix]
+        private static void ShieldGeneratorOnHoverAddFuelPostfix(ShieldGenerator __instance, ref string __result)
+        {
+            if (__instance == null || string.IsNullOrEmpty(__instance.m_add))
+                return;
+
+            AppendFillAllHint(ref __result, __instance.m_add, PullSetting.Fuel);
         }
 
         /// <summary>
@@ -607,6 +724,18 @@ namespace CraftFromDrawersAndChests.Patches
                 return -1;
 
             return StationFeedRules.RemainingFuelCapacity(smelter.m_maxFuel, fuel);
+        }
+
+        /// <summary>
+        /// A shield generator's remaining fuel capacity, or a negative number when the private getter
+        /// cannot be invoked. Reads the same reflected member the request amount uses.
+        /// </summary>
+        private static int ShieldFuelRemaining(ShieldGenerator generator)
+        {
+            if (generator == null || !TryInvokeFloat(ShieldGeneratorGetFuel, generator, out float fuel))
+                return -1;
+
+            return StationFeedRules.RemainingFuelCapacity(generator.m_maxFuel, fuel);
         }
 
         /// <summary>
@@ -1110,6 +1239,26 @@ namespace CraftFromDrawersAndChests.Patches
         }
 
         /// <summary>
+        /// The usable fuel prefabs of a shield generator, in the order the generator declares them.
+        /// A generator holds a list where a smelter holds one item, so the list is filtered once here
+        /// (dropping a null or an entry with no item data) and then walked by the same helpers the
+        /// smelter's inputs use.
+        /// </summary>
+        private static List<ItemDrop> FuelItems(List<ItemDrop> fuelItems)
+        {
+            var fuels = new List<ItemDrop>();
+            if (fuelItems == null)
+                return fuels;
+
+            for (int i = 0; i < fuelItems.Count; i++)
+            {
+                if (HasItemData(fuelItems[i]))
+                    fuels.Add(fuelItems[i]);
+            }
+            return fuels;
+        }
+
+        /// <summary>
         /// The hover-hint action word for adding fuel: the game's own smelter token, whose text is the
         /// word "Add" — the shipping assembly uses it in a hover hint of exactly this shape, so it reads
         /// correctly on a fire too. A fireplace has no hover token of its own, and this is the word
@@ -1232,7 +1381,7 @@ namespace CraftFromDrawersAndChests.Patches
         /// <summary>Which station setting gates a patch.</summary>
         private enum PullSetting
         {
-            /// <summary><c>PullFuel</c> — a fireplace's fuel, a smelter's fuel, a cooking station's fire.</summary>
+            /// <summary><c>PullFuel</c> — a fireplace's fuel, a smelter's fuel, a cooking station's fire, a shield generator's fuel.</summary>
             Fuel,
 
             /// <summary><c>PullOre</c> — a smelter's ore queue.</summary>

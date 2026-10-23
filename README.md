@@ -18,8 +18,9 @@ In short: CraftFromContainers, but for drawers too.
   inventory on demand. It brings the recipe's **full** materials every time — whatever you are
   already carrying — so you can click twice for the materials for two portals. There's no excuse
   for sailing to another continent without portal mats again!
-- **Station feeding.** Fireplaces, smelters and cooking stations pull fuel, ore and cooking
-  ingredients from storage.
+- **Station feeding.** Fireplaces, smelters, cooking stations and shield generators pull fuel, ore and
+  cooking ingredients from storage. Hold the fill-all key (`left shift` by default) and use a station to
+  fill it to capacity in one press.
 - **One range, both storage kinds.** A single range setting (default 10 m, and `0` or less
   means unlimited, matching CraftFromContainers) applies to chests and drawers alike.
 - **Per-storage switch.** Flip a chest or drawer off with a hotkey while hovering it, and

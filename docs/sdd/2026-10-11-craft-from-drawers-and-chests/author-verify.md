@@ -364,3 +364,29 @@ Evidence and reasoning: `game-1.0.20-compat-analysis.md` beside this file.
 and the compatibility evidence is the assembly diff in `game-1.0.20-compat-analysis.md`. These five functional
 checks were **not** run before 1.0.4 was published — the owner released on the strength of the load and that
 analysis. Run them against the released build; any failure goes to `/investigate`, not to a patch from a guess.
+
+## 1.0.5 — shield generator feeding
+
+Reported from play on 2026-10-23 (`Modheim` profile, Valheim 1.0.20): a `piece_shieldgenerator` took one
+`BoneFragments` per press, pulled nothing from nearby chests or drawers, and had no fill-all line. Cause: the
+mod had no `ShieldGenerator` patch at all (`Smelter` and `ShieldGenerator` are the only two types in
+`assembly_valheim.dll` that own an `OnAddFuel`). Run on Valheim 1.0.20, single player is enough for 1–4.
+
+1. [ ] **One unit, from a chest.** Fuel only in a nearby chest, nothing in your inventory. One `E` on the
+   generator's add-fuel switch. Expected: exactly **one** fuel is added, the chest loses exactly one
+   `BoneFragments`, and your inventory is unchanged afterwards.
+2. [ ] **The hint is there.** Look at the add-fuel switch. Expected: the vanilla `Shield generator (n/max)`
+   line plus a `[<color>shift+Use</color>] Add max` line beneath it (`Add` is the generator's own `m_add`
+   word; the key is whatever `Fill all mod key` is set to).
+3. [ ] **Fill-all.** Hold `left shift` and press `E`. Expected: the generator fills to exactly `m_maxFuel`
+   in one press, taking the fuel from storage; a second press at full adds nothing and takes nothing.
+4. [ ] **Range is the generator's.** A chest beside the generator feeds it while you stand back; a chest
+   beside *you* but outside the generator's range does not. (Same origin rule as the fire and the smelter.)
+5. [ ] **Off switch.** With `Pull fuel` off, the generator behaves exactly as vanilla 1.0.20: one item from
+   your own inventory per press, no storage pull, no fill-all.
+6. [ ] **Patch count.** The startup log reads `Harmony patched 24 game method(s)` and the list includes
+   `ShieldGenerator.OnAddFuel` and `ShieldGenerator.OnHoverAddFuel`. Anything other than 24 means the target
+   did not bind — check the log line, not the source.
+7. [ ] **A backpack is still not a source.** Fuel in your Adventure Backpacks backpack is not used by a
+   station, and nothing is moved out of the backpack. This is by design (see `backpack-requirement.md`);
+   the check pins that the new patch did not change it.
