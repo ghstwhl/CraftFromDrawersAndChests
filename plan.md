@@ -634,3 +634,16 @@ and falls back to the prefab name, so nothing can be left out.
 - [ ] A fifth ore type, if the profile has a modded smelter that converts one: it appears too.
 - [ ] A single type still reads `Added 1 Tin` — no stray separator or empty entry.
 
+### Task 4: release — **published 2026-10-24**
+
+- [x] Owner instructed the release after running 1.0.9 (`Modheim`, 2026-10-24 08:35: 1.0.9 loaded, 24
+      patches, no errors).
+- [x] Annotated tag `v1.0.9` (`8f8ef2f`) on `8e829f2`, pushed; release published as
+      <https://github.com/ghstwhl/CraftFromDrawersAndChests/releases/tag/v1.0.9> — API-verified
+      `draft=false`, `prerelease=false`, asset `CraftFromDrawersAndChests-1.0.9.zip`, 67,749 bytes, digest
+      `sha256:bee95198…` equal to the local zip, and it is the repository's latest release.
+- [x] Record: `release-1.0.9-notes.md`; body: `release-1.0.9-body.md`. The body covers **1.0.6–1.0.9**,
+      because 1.0.5 was the last published version.
+- [ ] **Thunderstore not uploaded** — its state cannot be checked from this environment; the last record
+      (1.0.3) had it on 1.0.1. A Thunderstore version is immutable.
+
