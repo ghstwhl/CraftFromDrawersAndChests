@@ -452,3 +452,17 @@ prints its own `$msg_added` — once per successful feed only.
    names, not prefab names.
 6. [ ] **Fuel is unchanged.** Feeding a fireplace, a smelter's fuel or a shield generator still shows the
    vanilla behaviour (no new line from the mod).
+
+## 1.0.9 — the feed line lists every ore type
+
+Raised by the owner on 2026-10-24: a smelter can convert more than two ores, so a press with one copper, one
+tin, one iron and one silver feeds four types, and the message must name all four. There was no two-entry
+limit; the fix makes completeness structural (`StationFeedRules.OrderFed` cannot drop a tallied type, and
+cannot double-count one the smelter lists twice).
+
+1. [ ] **Four ore types in one press.** One copper, one tin, one iron and one silver in the inventory, then
+   the fill-all key on a smelter. Expected: **one** line — `Added 1 Copper, 1 Tin, 1 Iron, 1 Silver` — in
+   the smelter's conversion order, and all four queue.
+2. [ ] **A fifth type**, if the profile has a smelter that converts another ore: it is listed too.
+3. [ ] **One type only.** `Added 1 Tin`, with no stray comma or empty entry.
+4. [ ] **Counts add up.** The numbers on the line equal what left the inventory plus what left storage.

@@ -1,5 +1,6 @@
 using CraftFromDrawersAndChests.Logic;
 using NUnit.Framework;
+using System.Collections.Generic;
 
 namespace CraftFromDrawersAndChests.Tests.Logic
 {
@@ -234,6 +235,111 @@ namespace CraftFromDrawersAndChests.Tests.Logic
                     new StationFeedRules.FedAmount("Tin", 0)
                 }),
                 Is.Null);
+        }
+
+        // ---------------- OrderFed (1.0.9) ----------------
+
+        [Test]
+        public void OrderFed_NoTally_IsEmpty()
+        {
+            Assert.That(StationFeedRules.OrderFed(null, new[] { "CopperOre" }).Count, Is.EqualTo(0));
+            Assert.That(
+                StationFeedRules.OrderFed(new Dictionary<string, int>(), new[] { "CopperOre" }).Count,
+                Is.EqualTo(0));
+        }
+
+        [Test]
+        public void OrderFed_FourOreTypes_AreAllListedInTheStationsOrder()
+        {
+            // A smelter can convert copper, tin, iron and silver; one press can feed all four, and the
+            // line must name all four. The tally's own order is deliberately not the station's.
+            var fed = new Dictionary<string, int>
+            {
+                { "SilverOre", 1 },
+                { "IronScrap", 1 },
+                { "TinOre", 1 },
+                { "CopperOre", 1 }
+            };
+
+            List<KeyValuePair<string, int>> ordered = StationFeedRules.OrderFed(
+                fed, new[] { "CopperOre", "TinOre", "IronScrap", "SilverOre" });
+
+            var prefabs = new List<string>();
+            for (int i = 0; i < ordered.Count; i++)
+                prefabs.Add(ordered[i].Key);
+
+            Assert.That(prefabs, Is.EqualTo(new[] { "CopperOre", "TinOre", "IronScrap", "SilverOre" }));
+        }
+
+        [Test]
+        public void OrderFed_NeverDropsATypeTheStationDoesNotName()
+        {
+            // Under-reporting is the failure that matters: a type that was fed but is missing from the
+            // station's own conversion list must still appear, not vanish from the message.
+            var fed = new Dictionary<string, int>
+            {
+                { "CopperOre", 1 },
+                { "MysteryOre", 2 }
+            };
+
+            List<KeyValuePair<string, int>> ordered = StationFeedRules.OrderFed(fed, new[] { "CopperOre" });
+
+            Assert.That(ordered.Count, Is.EqualTo(2));
+            Assert.That(ordered[0].Key, Is.EqualTo("CopperOre"));
+            Assert.That(ordered[1].Key, Is.EqualTo("MysteryOre"));
+            Assert.That(ordered[1].Value, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void OrderFed_ATypeListedTwiceByTheStation_IsEmittedOnce()
+        {
+            var fed = new Dictionary<string, int> { { "CopperOre", 5 } };
+
+            List<KeyValuePair<string, int>> ordered = StationFeedRules.OrderFed(
+                fed, new[] { "CopperOre", "CopperOre" });
+
+            Assert.That(ordered.Count, Is.EqualTo(1));
+            Assert.That(ordered[0].Value, Is.EqualTo(5));
+        }
+
+        [Test]
+        public void OrderFed_UnnamedOrEmptyTallyEntries_AreIgnored()
+        {
+            var fed = new Dictionary<string, int>
+            {
+                { "CopperOre", 0 },
+                { string.Empty, 3 }
+            };
+
+            Assert.That(StationFeedRules.OrderFed(fed, new[] { "CopperOre" }).Count, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void OrderFed_ThenFeedSummary_ListsAllFourOreTypes()
+        {
+            // The owner's scenario: one copper, one tin, one iron and one silver in the inventory, one
+            // press. The line must list all four, not stop at two.
+            var fed = new Dictionary<string, int>
+            {
+                { "CopperOre", 1 },
+                { "TinOre", 1 },
+                { "IronScrap", 1 },
+                { "SilverOre", 1 }
+            };
+
+            List<KeyValuePair<string, int>> ordered = StationFeedRules.OrderFed(
+                fed, new[] { "CopperOre", "TinOre", "IronScrap", "SilverOre" });
+
+            var amounts = new List<StationFeedRules.FedAmount>();
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                string display = ordered[i].Key == "SilverOre" ? "Silver" : ordered[i].Key;
+                amounts.Add(new StationFeedRules.FedAmount(display, ordered[i].Value));
+            }
+
+            Assert.That(
+                StationFeedRules.FeedSummary(amounts),
+                Is.EqualTo("Added 1 CopperOre, 1 TinOre, 1 IronScrap, 1 Silver"));
         }
 
         // ---------------- FillAllHint (Task 15b) ----------------

@@ -226,6 +226,11 @@ namespace CraftFromDrawersAndChests.Logic
         /// summary rather than one message per unit so that a fill-all press over several ore types
         /// reads as a single line instead of a dozen swapping messages.
         /// </para>
+        /// <para>
+        /// There is no entry limit: a smelter takes as many ore types as its conversions declare, and a
+        /// press that fed four of them must name all four. The completeness of the list is
+        /// <see cref="OrderFed"/>'s job, not this method's.
+        /// </para>
         /// </summary>
         /// <param name="fed">What was added, in display order; may be null.</param>
         public static string FeedSummary(IReadOnlyList<FedAmount> fed)
@@ -244,6 +249,63 @@ namespace CraftFromDrawersAndChests.Logic
             }
 
             return parts.Count == 0 ? null : "Added " + string.Join(", ", parts.ToArray());
+        }
+
+        /// <summary>
+        /// A feed's tally in display order: the prefabs the station itself names first, in the order it
+        /// names them, then anything the tally recorded that the station's list did not name.
+        /// <para>
+        /// <b>Complete by construction.</b> Every prefab with a positive count in
+        /// <paramref name="fedByPrefab"/> appears exactly once — a station may convert several ores (a
+        /// smelter can take copper, tin, iron and silver in one press), and dropping any of them would
+        /// make the HUD line under-report what the feed took. A prefab the station's list omits is
+        /// appended rather than lost, and a prefab listed twice (two conversions sharing an input) is
+        /// emitted once.
+        /// </para>
+        /// <para>
+        /// The station's own order is what a player recognises — copper before tin before iron — so the
+        /// appended tail is ordered by prefab name (ordinal) to stay deterministic rather than following
+        /// a dictionary's enumeration.
+        /// </para>
+        /// </summary>
+        /// <param name="fedByPrefab">Prefab name to units fed; may be null or empty.</param>
+        /// <param name="preferredPrefabs">The station's own input prefabs, in its declaration order; may be null.</param>
+        public static List<KeyValuePair<string, int>> OrderFed(
+            IReadOnlyDictionary<string, int> fedByPrefab, IReadOnlyList<string> preferredPrefabs)
+        {
+            var ordered = new List<KeyValuePair<string, int>>();
+            if (fedByPrefab == null || fedByPrefab.Count == 0)
+                return ordered;
+
+            var emitted = new HashSet<string>(StringComparer.Ordinal);
+            if (preferredPrefabs != null)
+            {
+                for (int i = 0; i < preferredPrefabs.Count; i++)
+                {
+                    string prefab = preferredPrefabs[i];
+                    if (string.IsNullOrEmpty(prefab) || !emitted.Add(prefab))
+                        continue;
+
+                    int amount;
+                    if (!fedByPrefab.TryGetValue(prefab, out amount) || amount <= 0)
+                        continue;
+
+                    ordered.Add(new KeyValuePair<string, int>(prefab, amount));
+                }
+            }
+
+            var extras = new List<string>();
+            foreach (KeyValuePair<string, int> pair in fedByPrefab)
+            {
+                if (!string.IsNullOrEmpty(pair.Key) && pair.Value > 0 && !emitted.Contains(pair.Key))
+                    extras.Add(pair.Key);
+            }
+
+            extras.Sort(StringComparer.Ordinal);
+            for (int i = 0; i < extras.Count; i++)
+                ordered.Add(new KeyValuePair<string, int>(extras[i], fedByPrefab[extras[i]]));
+
+            return ordered;
         }
     }
 }

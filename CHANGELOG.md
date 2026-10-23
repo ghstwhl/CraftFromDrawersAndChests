@@ -4,6 +4,17 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.9] - 2026-10-24
+
+### Changed
+
+- **The "Added …" line lists every ore type, however many there are.** A smelter converts as many ores as
+  it declares, and one fill-all press can feed copper, tin, iron and silver at once: the line names all of
+  them with their counts — `Added 1 Copper, 1 Tin, 1 Iron, 1 Silver` — in the station's own conversion
+  order. There was never a two-entry limit, and the list is now built so a type the feed actually took can
+  never be left out (a type the smelter's own list does not name is still reported, and one it lists twice
+  is not counted twice).
+
 ## [1.0.8] - 2026-10-24
 
 ### Added

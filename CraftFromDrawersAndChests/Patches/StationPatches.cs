@@ -460,28 +460,43 @@ namespace CraftFromDrawersAndChests.Patches
         /// Shows the "what this feed added" HUD line for a smelter's ore: one entry per ore type, in the
         /// smelter's own conversion order, with the item's localized display name. A fill that drew on
         /// several ores therefore names every one of them and its count on a single line, instead of a
-        /// message per unit swapping itself off the screen.
+        /// message per unit swapping itself off the screen — however many ore types the smelter converts
+        /// and the press fed. The completeness of the list comes from
+        /// <see cref="StationFeedRules.OrderFed"/>, which cannot drop a tallied type; an ore the
+        /// smelter's own list did not name is reported by its prefab name rather than omitted.
         /// </summary>
         /// <param name="inputs">The smelter's own input list, which supplies the order and the names.</param>
         /// <param name="fedByPrefab">Prefab name to units fed; may be empty.</param>
         private static void ShowFedOres(Player player, List<ItemDrop> inputs, Dictionary<string, int> fedByPrefab)
         {
-            if (player == null || inputs == null || fedByPrefab == null || fedByPrefab.Count == 0)
+            if (player == null || fedByPrefab == null || fedByPrefab.Count == 0)
                 return;
 
-            var fed = new List<StationFeedRules.FedAmount>(fedByPrefab.Count);
-            for (int i = 0; i < inputs.Count; i++)
+            var preferred = new List<string>();
+            var displayNames = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (inputs != null)
             {
-                ItemDrop input = inputs[i];
-                string prefab = PrefabName(input);
-                if (string.IsNullOrEmpty(prefab))
-                    continue;
+                for (int i = 0; i < inputs.Count; i++)
+                {
+                    ItemDrop input = inputs[i];
+                    string prefab = PrefabName(input);
+                    if (string.IsNullOrEmpty(prefab))
+                        continue;
 
-                int units;
-                if (!fedByPrefab.TryGetValue(prefab, out units))
-                    continue;
+                    preferred.Add(prefab);
+                    displayNames[prefab] = DisplayName(input);
+                }
+            }
 
-                fed.Add(new StationFeedRules.FedAmount(DisplayName(input), units));
+            List<KeyValuePair<string, int>> ordered = StationFeedRules.OrderFed(fedByPrefab, preferred);
+            var fed = new List<StationFeedRules.FedAmount>(ordered.Count);
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                string display;
+                if (!displayNames.TryGetValue(ordered[i].Key, out display) || string.IsNullOrEmpty(display))
+                    display = ordered[i].Key;
+
+                fed.Add(new StationFeedRules.FedAmount(display, ordered[i].Value));
             }
 
             string message = StationFeedRules.FeedSummary(fed);

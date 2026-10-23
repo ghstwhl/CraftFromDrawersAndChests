@@ -595,3 +595,42 @@ generator fuel all had it.
 - [ ] Empty base (nothing fed): no message at all.
 - [ ] A non-English game language: the ore names are the game's own localized ones.
 
+---
+
+# Plan: 1.0.9 — the feed line lists every ore type, not a fixed number (2026-10-24)
+
+**Raised by the owner:** a smelter can take more than two ore types, so a press with one copper, one tin,
+one iron and one silver feeds four types — the message must not stop at two.
+
+**Finding:** there was never a cap. `FeedSummary` joins every entry it is given and `ShowFedOres` walked the
+whole input list — four types already produced four entries. Two real weaknesses sat either side of that,
+both about *completeness* rather than count:
+
+1. `ShowFedOres` only emitted prefabs present in the smelter's own `m_conversion` list, so a tallied type the
+   list omitted was **silently dropped** from the message.
+2. A prefab named twice by the conversion list was emitted **twice**, double-counting it.
+
+**Fix:** a pure `StationFeedRules.OrderFed(fedByPrefab, preferredPrefabs)` builds the display list. It is
+complete by construction — every positive tally entry appears exactly once, station-named ones first in the
+station's order, any others appended in ordinal order. `ShowFedOres` maps those to localized display names
+and falls back to the prefab name, so nothing can be left out.
+
+### Task 1: completeness
+
+- [x] `OrderFed` + six tests, including the owner's four-ore scenario composed through `FeedSummary`
+      (`Added 1 CopperOre, 1 TinOre, 1 IronScrap, 1 Silver`)
+- [x] `ShowFedOres` rebuilt on `OrderFed`; unknown types reported by prefab name
+- [x] `dotnet test` **277/277**; `BUILD OK - CraftFromDrawersAndChests 1.0.9`
+
+### Task 2: version + docs
+
+- [x] 1.0.9 in `ModInfo.cs`/`manifest.json`; CHANGELOG under **Changed**
+- [x] owner checklist in `author-verify.md`
+
+### Task 3 (owner): in-game checklist
+
+- [ ] One each of copper, tin, iron and silver in the inventory, fill-all on a smelter: **one** line naming
+      all four with their counts, in conversion order (this is the reported scenario).
+- [ ] A fifth ore type, if the profile has a modded smelter that converts one: it appears too.
+- [ ] A single type still reads `Added 1 Tin` — no stray separator or empty entry.
+
