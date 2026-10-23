@@ -175,6 +175,67 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             Assert.That(StationFeedRules.ShouldStopInputWalk(false), Is.False);
         }
 
+        // ---------------- FeedSummary (1.0.8) ----------------
+
+        [Test]
+        public void FeedSummary_NothingAdded_IsNull()
+        {
+            Assert.That(StationFeedRules.FeedSummary(null), Is.Null);
+            Assert.That(StationFeedRules.FeedSummary(new StationFeedRules.FedAmount[0]), Is.Null);
+        }
+
+        [Test]
+        public void FeedSummary_OneOre_ReadsAsVanillasAddedLine()
+        {
+            string summary = StationFeedRules.FeedSummary(new[]
+            {
+                new StationFeedRules.FedAmount("Tin", 1)
+            });
+
+            Assert.That(summary, Is.EqualTo("Added 1 Tin"));
+        }
+
+        [Test]
+        public void FeedSummary_SeveralOres_KeepTheGivenOrder()
+        {
+            // The order is the station's own conversion order, not the order storage handed them over.
+            string summary = StationFeedRules.FeedSummary(new[]
+            {
+                new StationFeedRules.FedAmount("Scrap iron", 10),
+                new StationFeedRules.FedAmount("Tin", 3),
+                new StationFeedRules.FedAmount("Copper", 7)
+            });
+
+            Assert.That(summary, Is.EqualTo("Added 10 Scrap iron, 3 Tin, 7 Copper"));
+        }
+
+        [Test]
+        public void FeedSummary_SkipsEntriesWithNoNameOrNoAmount()
+        {
+            string summary = StationFeedRules.FeedSummary(new[]
+            {
+                new StationFeedRules.FedAmount(null, 5),
+                new StationFeedRules.FedAmount(string.Empty, 5),
+                new StationFeedRules.FedAmount("Tin", 0),
+                new StationFeedRules.FedAmount("Scrap iron", -2),
+                new StationFeedRules.FedAmount("Copper", 4)
+            });
+
+            Assert.That(summary, Is.EqualTo("Added 4 Copper"));
+        }
+
+        [Test]
+        public void FeedSummary_OnlyUnusableEntries_IsNull()
+        {
+            Assert.That(
+                StationFeedRules.FeedSummary(new[]
+                {
+                    new StationFeedRules.FedAmount("", 3),
+                    new StationFeedRules.FedAmount("Tin", 0)
+                }),
+                Is.Null);
+        }
+
         // ---------------- FillAllHint (Task 15b) ----------------
 
         [Test]

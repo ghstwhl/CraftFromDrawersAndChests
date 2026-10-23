@@ -553,3 +553,45 @@ generator fuel all had it.
 - [ ] No losses: units queued == units removed from inventory + storage; no "station did not take a fed"
       or "could not remove" line in the log.
 
+---
+
+# Plan: 1.0.8 — say what a smelter feed added (2026-10-24)
+
+**Requested by the owner:** loading ore into a smelter should print an on-screen message listing the ores
+ added and their quantities; with the fill-all key, if more than one ore type is used, **all** types and
+ quantities must be listed.
+
+**Design**
+
+- The text is pure and tested: `StationFeedRules.FeedSummary(IReadOnlyList<FedAmount>)` returns
+  `"Added 10 Scrap iron, 3 Tin"`, preserving the given order and skipping unnamed/zero entries, or `null`
+  when nothing was added. `FedAmount` is a name+count pair the game-facing code fills with the localized name.
+- `FeedStation` gained an optional `Action<string,int> recordFed`; the smelter's ore prefix tallies units per
+  prefab (`Tally`, ordinal dictionary) and `ShowFedOres` renders them in the smelter's own conversion order
+  through `DisplayName` (shared name → `Localization.instance.Localize`).
+- Printed with `player.Message(MessageHud.MessageType.TopLeft, ...)` — the position vanilla uses for its own
+  `$msg_added` — once per interaction, after a successful feed only (`fed > 0`).
+- Scope: the smelter's **ore** (which covers a blast furnace's flametal). Fuel is untouched: the request was
+  about ore, and a fuel feed is one prefab per station with vanilla's own message behind it.
+
+### Task 1: the summary
+
+- [x] `FedAmount` + `FeedSummary` in `Logic/StationFeedRules.cs`; five tests (empty/null, one, several in
+      order, unusable entries skipped, only-unusable → null)
+- [x] `FeedStation` tally hook; `Tally`, `ShowFedOres`, `DisplayName` in `StationPatches`
+- [x] `dotnet test` **271/271**; `BUILD OK - CraftFromDrawersAndChests 1.0.8`
+
+### Task 2: version + docs
+
+- [x] 1.0.8 in `ModInfo.cs`/`manifest.json`; CHANGELOG under **Added**
+- [x] owner checklist in `author-verify.md`
+
+### Task 3 (owner): in-game checklist
+
+- [ ] Plain `E` with one ore in a drawer: `Added 1 Tin`.
+- [ ] Fill-all where the smelter takes **two** ore types (e.g. some copper in the inventory and tin in a
+      chest): one line naming both with counts, in the smelter's conversion order — not one message per unit.
+- [ ] A fill of a single type: `Added 10 Scrap iron`.
+- [ ] Empty base (nothing fed): no message at all.
+- [ ] A non-English game language: the ore names are the game's own localized ones.
+

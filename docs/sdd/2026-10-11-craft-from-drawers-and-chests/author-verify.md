@@ -433,3 +433,22 @@ ore the storage actually held. A blast furnace converts one ore, which is why 1.
 5. [ ] **1.0.6 still holds.** Flametal in the inventory, shift-E on a blast furnace: fills in one press.
 6. [ ] **Nothing lost.** Units queued == units removed from inventory + storage, and no "station did not
    take a fed" / "could not remove" line in the log.
+
+## 1.0.8 — the smelter feed reports what it added
+
+Requested by the owner on 2026-10-24: loading ore into a smelter should print the ores added and their
+quantities; with the fill-all key, **every** ore type used must be listed. The line is composed by
+`StationFeedRules.FeedSummary` (pure, tested) and shown at `MessageHud.MessageType.TopLeft` — where vanilla
+prints its own `$msg_added` — once per successful feed only.
+
+1. [ ] **One ore, plain `E`.** Tin ore only in a drawer: `Added 1 Tin`.
+2. [ ] **Several ores in one fill.** Hold the fill-all key where the smelter takes **two** ore types in one
+   press (e.g. some copper in the inventory and tin in a chest, with room for both). Expected: a **single**
+   line naming both with their counts, in the smelter's own conversion order — not one message per unit.
+3. [ ] **One type, full fill.** `Added 10 Scrap iron` (or whatever the capacity is).
+4. [ ] **Empty base.** With nothing in storage and nothing in hand, the vanilla "you don't have any …"
+   message appears and the mod adds **no** line of its own.
+5. [ ] **Names are the game's.** In a non-English language the ore names read as the game's own localized
+   names, not prefab names.
+6. [ ] **Fuel is unchanged.** Feeding a fireplace, a smelter's fuel or a shield generator still shows the
+   vanilla behaviour (no new line from the mod).

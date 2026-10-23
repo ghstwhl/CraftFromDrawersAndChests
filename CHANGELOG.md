@@ -4,6 +4,18 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8] - 2026-10-24
+
+### Added
+
+- **A message says what a smelter feed actually added.** Loading ore into a smelter or blast furnace now
+  prints one line naming every ore and how many of each went in — `Added 10 Scrap iron, 3 Tin` — in the
+  station's own conversion order, with the game's localized item names. It matters most with the fill-all
+  key, where one press can draw on several ores at once: every type is listed with its count on a single
+  line, instead of a message per unit swapping itself off the screen. Vanilla's `$msg_added` still covers
+  the single unit it consumes out of your own hands, so the two read alike.
+- Nothing is printed when the feed added nothing, so an empty base stays quiet.
+
 ## [1.0.7] - 2026-10-23
 
 ### Fixed

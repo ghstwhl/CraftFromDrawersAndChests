@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace CraftFromDrawersAndChests.Logic
 {
@@ -194,6 +195,55 @@ namespace CraftFromDrawersAndChests.Logic
                 return null;
 
             return "\n[<color=yellow><b>" + fillAllKey + "+$KEY_Use</b></color>] " + action + " max";
+        }
+
+        /// <summary>One item type a station feed added, and how many of it. Pure; the game-facing
+        /// patch fills it with the item's localized display name.</summary>
+        public readonly struct FedAmount
+        {
+            /// <summary>The item's display name as it should read on screen (already localized).</summary>
+            public readonly string Name;
+
+            /// <summary>How many were added.</summary>
+            public readonly int Amount;
+
+            public FedAmount(string name, int amount)
+            {
+                Name = name;
+                Amount = amount;
+            }
+        }
+
+        /// <summary>
+        /// The one-line HUD summary of what a station feed added: <c>"Added 10 Scrap iron, 3 Tin"</c>.
+        /// Entries keep the order given — the station's own conversion order — so a smelter that takes
+        /// several ores lists them the way it declares them, not the way storage happened to hand them
+        /// over. An entry with no name or a non-positive amount is skipped, and a feed that added
+        /// nothing produces <c>null</c>, which the caller must not show.
+        /// <para>
+        /// Vanilla prints its own <c>$msg_added</c> for the unit it consumes out of the player's hands;
+        /// this is the same information for the units the mod fed, which vanilla never sees. It is a
+        /// summary rather than one message per unit so that a fill-all press over several ore types
+        /// reads as a single line instead of a dozen swapping messages.
+        /// </para>
+        /// </summary>
+        /// <param name="fed">What was added, in display order; may be null.</param>
+        public static string FeedSummary(IReadOnlyList<FedAmount> fed)
+        {
+            if (fed == null || fed.Count == 0)
+                return null;
+
+            var parts = new List<string>(fed.Count);
+            for (int i = 0; i < fed.Count; i++)
+            {
+                FedAmount entry = fed[i];
+                if (string.IsNullOrEmpty(entry.Name) || entry.Amount <= 0)
+                    continue;
+
+                parts.Add(entry.Amount + " " + entry.Name);
+            }
+
+            return parts.Count == 0 ? null : "Added " + string.Join(", ", parts.ToArray());
         }
     }
 }

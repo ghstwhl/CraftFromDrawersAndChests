@@ -433,18 +433,75 @@ namespace CraftFromDrawersAndChests.Patches
             // with no room at all, left the queue unfilled. CraftFromContainers feeds at both amounts
             // (its `pullAll ? Min(m_maxOre - GetQueueSize(), available) : 1`, CFC line 503).
             Vector3 origin = __instance.transform.position;
+
+            // One tally per ore type, so a fill that draws on several ores can say what it added
+            // (ShowFedOres). The fuel and food paths pass no tally: they feed one prefab per station.
+            var fedByPrefab = new Dictionary<string, int>(StringComparer.Ordinal);
             int fed = FeedStation(player, inventory, ___m_nview, flags,
                 StationFeedRules.FillAmount(fillAll, remaining), AddOreRpc,
                 wanted => PullFirstInputs(
                     player, inventory, origin, inputs, flags.OreDisallowTypes, flags, wanted, fillAll),
-                () => QueueRemaining(__instance));
+                () => QueueRemaining(__instance),
+                (prefab, units) => Tally(fedByPrefab, prefab, units));
 
             // Swallow the interaction once anything was queued so vanilla does not add a second item,
-            // but report it as handled - the value CraftFromContainers sets (CFC line 569).
+            // but report it as handled - the value CraftFromContainers sets (CFC line 569) - and say
+            // what went in, which vanilla's own "$msg_added" cannot because it never sees this ore.
             if (fed > 0)
+            {
                 __result = true;
+                ShowFedOres(player, inputs, fedByPrefab);
+            }
 
             return fed <= 0;
+        }
+
+        /// <summary>
+        /// Shows the "what this feed added" HUD line for a smelter's ore: one entry per ore type, in the
+        /// smelter's own conversion order, with the item's localized display name. A fill that drew on
+        /// several ores therefore names every one of them and its count on a single line, instead of a
+        /// message per unit swapping itself off the screen.
+        /// </summary>
+        /// <param name="inputs">The smelter's own input list, which supplies the order and the names.</param>
+        /// <param name="fedByPrefab">Prefab name to units fed; may be empty.</param>
+        private static void ShowFedOres(Player player, List<ItemDrop> inputs, Dictionary<string, int> fedByPrefab)
+        {
+            if (player == null || inputs == null || fedByPrefab == null || fedByPrefab.Count == 0)
+                return;
+
+            var fed = new List<StationFeedRules.FedAmount>(fedByPrefab.Count);
+            for (int i = 0; i < inputs.Count; i++)
+            {
+                ItemDrop input = inputs[i];
+                string prefab = PrefabName(input);
+                if (string.IsNullOrEmpty(prefab))
+                    continue;
+
+                int units;
+                if (!fedByPrefab.TryGetValue(prefab, out units))
+                    continue;
+
+                fed.Add(new StationFeedRules.FedAmount(DisplayName(input), units));
+            }
+
+            string message = StationFeedRules.FeedSummary(fed);
+            if (string.IsNullOrEmpty(message))
+                return;
+
+            // TopLeft is where vanilla prints its own "$msg_added" line, so the feed reads like the
+            // game rather than like a mod banner.
+            player.Message(MessageHud.MessageType.TopLeft, message, 0, null);
+        }
+
+        /// <summary>Adds one pass's units to a per-prefab tally, creating the entry when needed.</summary>
+        private static void Tally(Dictionary<string, int> tally, string prefab, int units)
+        {
+            if (tally == null || string.IsNullOrEmpty(prefab) || units <= 0)
+                return;
+
+            int existing;
+            tally.TryGetValue(prefab, out existing);
+            tally[prefab] = existing + units;
         }
 
         /// <summary>
@@ -935,9 +992,15 @@ namespace CraftFromDrawersAndChests.Patches
         /// storage differently, and the station's add RPC has to be told which input the smelter was
         /// actually fed.
         /// </param>
+        /// <param name="recordFed">
+        /// Optional: receives each pass's prefab name and the units it fed, so a caller can report what
+        /// went in. The smelter's ore patch tallies by ore type for <see cref="ShowFedOres"/>; the fuel
+        /// and food paths pass null.
+        /// </param>
         private static int FeedStation(
             Player player, Inventory inventory, ZNetView nview, FeatureFlags flags,
-            int remaining, string rpcName, Func<int, string> pullOneBatch, Func<int> remainingNow)
+            int remaining, string rpcName, Func<int, string> pullOneBatch, Func<int> remainingNow,
+            Action<string, int> recordFed = null)
         {
             if (player == null || inventory == null || nview == null || flags == null || remaining <= 0 ||
                 pullOneBatch == null)
@@ -956,6 +1019,9 @@ namespace CraftFromDrawersAndChests.Patches
                     break;
 
                 fedTotal += fed;
+
+                if (recordFed != null)
+                    recordFed(prefab, fed);
             }
 
             return fedTotal;
@@ -1443,6 +1509,20 @@ namespace CraftFromDrawersAndChests.Patches
             return item != null && item.m_itemData != null && item.m_itemData.m_shared != null
                 ? item.m_itemData.m_shared.m_name
                 : null;
+        }
+
+        /// <summary>
+        /// The item's name as the game shows it: the shared name through the localizer, so the feed
+        /// summary reads "Scrap iron" in English and in whatever language the player runs. Falls back
+        /// to the shared name, then to the prefab name, rather than showing a null.
+        /// </summary>
+        private static string DisplayName(ItemDrop item)
+        {
+            string sharedName = SharedName(item);
+            if (string.IsNullOrEmpty(sharedName))
+                return PrefabName(item);
+
+            return Localization.instance != null ? Localization.instance.Localize(sharedName) : sharedName;
         }
 
         /// <summary>
