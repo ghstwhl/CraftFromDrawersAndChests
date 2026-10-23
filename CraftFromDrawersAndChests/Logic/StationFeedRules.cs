@@ -121,6 +121,34 @@ namespace CraftFromDrawersAndChests.Logic
         }
 
         /// <summary>
+        /// Whether a station interaction should feed at all, given whether the player already carries an
+        /// item the station accepts.
+        /// <para>
+        /// Without the modifier the answer is "only when the player carries none": vanilla's own add
+        /// would find and consume the carried item one unit at a time, and leaving it alone is what
+        /// CraftFromContainers does (<c>inventory.HaveItem(...) &amp;&amp; !pullAll</c>, CFC lines 280/582).
+        /// The modifier inverts that: a fill is an explicit request for the station's whole remaining
+        /// capacity, and the stock that pays for it is the player's own plus storage's — so the guard
+        /// must not short-circuit, or holding the key would change nothing whenever the fuel or ore is
+        /// in the inventory rather than in a chest (reported from play 2026-10-23 against a blast
+        /// furnace: shift-E added one flametal per press).
+        /// </para>
+        /// <para>
+        /// CraftFromContainers only applies that inversion to a station's <i>fuel</i>; its smelter-ore
+        /// guard returns true whatever the modifier says (CFC lines 464-482), so applying it to ore is a
+        /// deliberate divergence — the alternative leaves the one station whose stock is ore unable to
+        /// fill from carried ore.
+        /// </para>
+        /// </summary>
+        /// <param name="fillAll">Whether the fill-all modifier is held.</param>
+        /// <param name="playerHoldsInput">Whether the player's inventory already holds an item the
+        /// station accepts.</param>
+        public static bool ShouldAttemptFeed(bool fillAll, bool playerHoldsInput)
+        {
+            return fillAll || !playerHoldsInput;
+        }
+
+        /// <summary>
         /// The hover hint that advertises the fill-all modifier on a smelter's add action: the
         /// bracketed <c>[shift+Use] … max</c> line CraftFromContainers 4.0.7 appends to the smelter's
         /// fuel and ore hovers (CFC <c>BepInExPlugin.cs</c> lines 436-438 and 451-453). Returns null

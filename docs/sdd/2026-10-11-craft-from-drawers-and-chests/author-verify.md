@@ -390,3 +390,26 @@ mod had no `ShieldGenerator` patch at all (`Smelter` and `ShieldGenerator` are t
 7. [ ] **A backpack is still not a source.** Fuel in your Adventure Backpacks backpack is not used by a
    station, and nothing is moved out of the backpack. This is by design (see `backpack-requirement.md`);
    the check pins that the new patch did not change it.
+
+## 1.0.6 — the fill-all key and material already in the inventory
+
+Reported from play on 2026-10-23: with flametal in the inventory, shift-E over a `piece_blastfurnace` added
+one flametal per press. Two causes, both in the station feed — the "you already carry an input" guard ran
+before the modifier was read (and on the ore path ignored it), and a pull that storage had nothing to add to
+was reported as a failure, stopping the feed before it fed anything. The same two faults applied to a
+fireplace's and a smelter's fuel and a shield generator's fuel.
+
+1. [ ] **Blast furnace, ore in hand.** Flametal **only in your inventory**, nothing in storage. Hold
+   `left shift` and press `E` on the furnace. Expected: the queue fills in one press from your own flametal;
+   your stack drops by exactly the ore queued; nothing is left in the furnace beyond `m_maxOre`.
+2. [ ] **Split supply.** Some flametal in hand and some in a nearby chest. Expected: the queue fills to
+   capacity using both, and neither source loses more than it contributed.
+3. [ ] **Fuel, same shape.** With wood/coal in the inventory, hold the modifier on a fireplace, a smelter's
+   fuel switch and a shield generator's switch. Expected: each fills to capacity in one press.
+4. [ ] **Released interaction unchanged.** Same stations, **no** modifier, input in hand. Expected: exactly
+   one item per press, consumed from your own inventory — vanilla behaviour, no spurious message.
+5. [ ] **Storage-only fill unchanged.** Nothing in hand, stock in a chest: the 1.0.5 fill still fills to
+   capacity and the hint line is still shown.
+6. [ ] **Nothing lost.** Watch one station and one inventory count across the whole pass: units queued must
+   equal units removed from the inventory plus units taken from storage, and the log must contain no
+   "station did not take a fed" or "could not remove" line.

@@ -11,7 +11,7 @@ namespace CraftFromDrawersAndChests
     {
         public const string ModName = "CraftFromDrawersAndChests";
         public const string ModGuid = "NorCal_Nerds.CraftFromDrawersAndChests";
-        public const string Version = "1.0.5";
+        public const string Version = "1.0.6";
         public const string ThunderstoreTeam = "NorCal_Nerds";
         public const string ThunderstorePackage = "CraftFromDrawersAndChests";
         public const string GitHubRepo = "ghstwhl/CraftFromDrawersAndChests";

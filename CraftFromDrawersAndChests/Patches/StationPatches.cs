@@ -69,7 +69,15 @@ namespace CraftFromDrawersAndChests.Patches
     /// patches here read it and the two cooking-station patches do not. The amount itself is
     /// <see cref="StationFeedRules.FillAmount"/>; the same modifier also lifts the "the player already
     /// carries the fuel" guard on the fireplace and the smelter's fuel, exactly as CFC's
-    /// <c>inventory.HaveItem(...) &amp;&amp; !pullAll</c> does (CFC lines 280 and 582). CFC additionally
+    /// <c>inventory.HaveItem(...) &amp;&amp; !pullAll</c> does (CFC lines 280 and 582) — and, since 1.0.6,
+    /// the "the player already carries an input ore" guard on the smelter, which CFC does <b>not</b> lift
+    /// (its input-ore guard returns true whatever the modifier says, CFC lines 471-482). That ore case is
+    /// a deliberate divergence: without it shift-E cannot fill the one station whose stock <i>is</i> ore
+    /// from ore already in hand (reported from play 2026-10-23 against a blast furnace, which added one
+    /// flametal per press). Every one of those guards goes through
+    /// <see cref="StationFeedRules.ShouldAttemptFeed"/>, and a pull that storage has nothing to add to
+    /// counts as <b>satisfied</b> rather than failed, so the fill goes on to feed what the player is
+    /// carrying rather than stopping at zero. CFC additionally
     /// lets the modifier override its prevent key on the smelter patches (<c>!AllowByKey() &amp;&amp;
     /// !pullAll</c>, lines 465 and 582) but not on the fireplace (line 280); this port keeps the prevent
     /// gate authoritative everywhere and documents that as a deliberate divergence — see the gating
@@ -327,7 +335,7 @@ namespace CraftFromDrawersAndChests.Patches
             // `inventory.HaveItem(...) && !pullAll` (line 280), so with the modifier held the pull runs
             // even when the player is already carrying some fuel.
             bool fillAll = FillAllHeld(flags);
-            if (!fillAll && inventory.HaveItem(SharedName(fuelItem)))
+            if (!StationFeedRules.ShouldAttemptFeed(fillAll, inventory.HaveItem(SharedName(fuelItem))))
                 return true;
 
             ZDO zdo = ___m_nview.GetZDO();
@@ -396,19 +404,23 @@ namespace CraftFromDrawersAndChests.Patches
                 return true;
 
             // The fill-all modifier widens one request to the whole remaining queue (CFC line 503: the
-            // same `pullAll ? Min(m_maxOre - GetQueueSize(), available) : 1`). It does NOT widen the
-            // "the player already carries an input ore" guard below, mirroring CFC, whose input-ore
-            // test returns true whatever the modifier does (CFC lines 471-482).
+            // same `pullAll ? Min(m_maxOre - GetQueueSize(), available) : 1`). It also lifts the "the
+            // player already carries an input ore" guard below, which CFC does NOT do (its input-ore
+            // test returns true whatever the modifier says, CFC lines 471-482) — a deliberate
+            // divergence, because without it shift-E cannot fill the one station whose stock is ore
+            // from ore already in hand (a blast furnace with flametal in the inventory added one per
+            // press; reported from play 2026-10-23).
             bool fillAll = FillAllHeld(flags);
 
             List<ItemDrop> inputs = InputItems(__instance.m_conversion);
 
             // CFC lines 468-479: if the player's own inventory already holds one of the smelter's
-            // input types, vanilla's own OnAddOre will find and queue it, so this leaves it alone.
-            // Vanilla's own probe, Smelter::FindCookableItem(Inventory), is PRIVATE in the shipping
-            // assembly and cannot be called directly; this tests the same thing with the public
-            // Inventory.GetItem(<shared name>, -1, false) walked over m_conversion, exactly as CFC does.
-            if (InventoryHasInput(inventory, inputs))
+            // input types, vanilla's own OnAddOre will find and queue it, so the released interaction
+            // leaves it alone. Vanilla's own probe, Smelter::FindCookableItem(Inventory), is PRIVATE in
+            // the shipping assembly and cannot be called directly; this tests the same thing with the
+            // public Inventory.GetItem(<shared name>, -1, false) walked over m_conversion, exactly as
+            // CFC does.
+            if (!StationFeedRules.ShouldAttemptFeed(fillAll, InventoryHasInput(inventory, inputs)))
                 return true;
 
             // Queue the ore directly - one unit normally, the whole remaining queue while the fill
@@ -508,7 +520,7 @@ namespace CraftFromDrawersAndChests.Patches
             // As on the fireplace, the fill-all modifier lifts the "the player already carries the
             // fuel" guard, mirroring CFC's `inventory.HaveItem(...) && !pullAll` (CFC line 582).
             bool fillAll = FillAllHeld(flags);
-            if (!fillAll && inventory.HaveItem(SharedName(fuelItem)))
+            if (!StationFeedRules.ShouldAttemptFeed(fillAll, inventory.HaveItem(SharedName(fuelItem))))
                 return true;
 
             string prefab = PrefabName(fuelItem);
@@ -593,7 +605,7 @@ namespace CraftFromDrawersAndChests.Patches
             // carries the fuel" guard. Vanilla's own branch does the same search with HaveItem, so
             // this only decides whether the pull runs, never what vanilla does afterwards.
             bool fillAll = FillAllHeld(flags);
-            if (!fillAll && InventoryHasInput(inventory, fuels))
+            if (!StationFeedRules.ShouldAttemptFeed(fillAll, InventoryHasInput(inventory, fuels)))
                 return true;
 
             Vector3 origin = __instance.transform.position;
@@ -932,10 +944,13 @@ namespace CraftFromDrawersAndChests.Patches
         /// </summary>
         /// <param name="pullOneBatch">
         /// One pull step: given the number of units this pass may ask for, pulls into the inventory and
-        /// returns the <b>prefab name</b> it left there - or null when nothing arrived, which ends the
-        /// fill. The name is returned rather than assumed because a single-prefab station (a fireplace's
-        /// fuel) and a multi-input one (a smelter's ore) ask storage differently, and the station's add
-        /// RPC has to be told which input the smelter was actually fed.
+        /// returns the <b>prefab name</b> it left there - or null when nothing arrived <b>and the
+        /// inventory holds none of the station's inputs</b>, which ends the fill. A pull storage cannot
+        /// improve on is not a failure: the batch still names the input the player is already carrying,
+        /// so a held fill feeds that stock too. The name is returned rather than assumed because a
+        /// single-prefab station (a fireplace's fuel) and a multi-input one (a smelter's ore) ask
+        /// storage differently, and the station's add RPC has to be told which input the smelter was
+        /// actually fed.
         /// </param>
         private static int FeedStation(
             Player player, Inventory inventory, ZNetView nview, FeatureFlags flags,
@@ -1123,8 +1138,18 @@ namespace CraftFromDrawersAndChests.Patches
         /// <summary>
         /// Pulls <paramref name="amount"/> of <paramref name="prefab"/> into <paramref name="player"/>'s
         /// inventory from storage in range of <paramref name="origin"/> (the station), through the
-        /// mod's one pull entry point. Returns whether anything was actually pulled; a pull that
-        /// storage cannot cover, or that the inventory cannot take, moves nothing.
+        /// mod's one pull entry point. Returns whether the destination now holds what was asked for —
+        /// which includes the case where storage did not have to contribute anything because the
+        /// inventory already held it all. It returns false only when the pull could not be satisfied
+        /// (storage cannot cover it and the inventory does not hold it, or the inventory cannot take
+        /// what would be delivered).
+        /// <para>
+        /// <b>Why "satisfied" rather than "something moved".</b> The planner asks storage only for the
+        /// shortfall below what the inventory already holds, so a fill with the stock already in hand
+        /// produces no plan lines at all. Treating that as a failed pull made the feed stop before
+        /// feeding anything, which left the interaction to vanilla — one item per press, whatever the
+        /// modifier said (reported from play 2026-10-23 against a blast furnace holding flametal).
+        /// </para>
         /// <para>
         /// <paramref name="amount"/> is the station's whole remaining capacity while the fill-all
         /// modifier is held and <c>1</c> otherwise (see <see cref="StationFeedRules.FillAmount"/>). The
@@ -1171,15 +1196,20 @@ namespace CraftFromDrawersAndChests.Patches
                 Debug(flags, "Station: pulled up to " + amount + "x '" + prefab +
                     "' from storage into " + player.name + "'s inventory.");
 
-            return pulled && requested;
+            // `pulled` alone: a pull the destination already covers is a satisfied no-op, and the feed
+            // must carry on to consume what the player is holding. Requiring `requested` here is what
+            // made a held fill stop at zero when the stock was in the inventory rather than a chest.
+            return pulled;
         }
 
         /// <summary>
         /// Pulls <paramref name="amount"/> of the first input in <paramref name="inputs"/> that storage
-        /// can supply, skipping any input whose prefab name is on <paramref name="disallowTypes"/>
-        /// (and taking nothing when the request is zero). Walks the station's own input order, so a
-        /// smelter that accepts several ores asks for the first one the base can actually provide,
-        /// exactly as CraftFromContainers' loop over <c>m_conversion</c> does.
+        /// can supply <b>or that the destination already holds</b>, skipping any input whose prefab name
+        /// is on <paramref name="disallowTypes"/> (and taking nothing when the request is zero). Walks
+        /// the station's own input order, so a smelter that accepts several ores asks for the first one
+        /// the base can actually provide, exactly as CraftFromContainers' loop over <c>m_conversion</c>
+        /// does. The destination clause is what lets a held fill feed ore the player is already carrying,
+        /// where storage has nothing to add.
         /// </summary>
         /// <param name="fillUpTo">Whether the request is a fill: see <see cref="PullFromStorage"/>.</param>
         private static bool PullFirstInputs(

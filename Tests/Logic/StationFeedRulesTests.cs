@@ -137,6 +137,27 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             Assert.That(StationFeedRules.FillAmount(false, -3), Is.EqualTo(0));
         }
 
+        // ---------------- ShouldAttemptFeed (1.0.6) ----------------
+
+        [Test]
+        public void ShouldAttemptFeed_Released_DefersToVanillaWhenThePlayerCarriesAnInput()
+        {
+            // CraftFromContainers' `inventory.HaveItem(...) && !pullAll` (CFC lines 280/582): with the key
+            // released, an input already in the inventory is vanilla's to consume, one per interaction.
+            Assert.That(StationFeedRules.ShouldAttemptFeed(false, true), Is.False);
+            Assert.That(StationFeedRules.ShouldAttemptFeed(false, false), Is.True);
+        }
+
+        [Test]
+        public void ShouldAttemptFeed_WithTheModifier_IgnoresWhatThePlayerCarries()
+        {
+            // The regression this pins (2026-10-23): a blast furnace with flametal in the inventory
+            // added one ore per press, because the "already carries an input" guard short-circuited
+            // before the modifier was consulted.
+            Assert.That(StationFeedRules.ShouldAttemptFeed(true, true), Is.True);
+            Assert.That(StationFeedRules.ShouldAttemptFeed(true, false), Is.True);
+        }
+
         // ---------------- FillAllHint (Task 15b) ----------------
 
         [Test]

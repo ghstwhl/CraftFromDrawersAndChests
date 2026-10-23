@@ -4,6 +4,22 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2026-10-23
+
+### Fixed
+
+- **The fill-all key now fills a station from the material you are already carrying.** Holding the
+  fill-all key (`left shift` by default) while using a station that had the station's own input in your
+  inventory added **one** item per press instead of filling it — most visible on a **blast furnace** with
+  flametal in your inventory, but true of a fireplace's and a smelter's fuel, a smelter's ore and a shield
+  generator's fuel alike. Two causes, both in the station feed: the "you already carry an input, so this is
+  vanilla's interaction" guard ran before the modifier was consulted (on the ore path it ignored the
+  modifier entirely), and a pull that storage had nothing to add to was reported as a failure, which
+  stopped the feed before it fed anything. With the key held, the station now takes its whole remaining
+  capacity from your inventory and storage together.
+- **The released interaction is unchanged.** Without the key, an input you are carrying is still vanilla's
+  to consume, one per press — and with storage, a fill works exactly as it did in 1.0.5.
+
 ## [1.0.5] - 2026-10-23
 
 ### Fixed

@@ -457,3 +457,53 @@ Tasks 1–3 complete; nothing committed or pushed yet.
   65,563 bytes, digest equal to the local zip. Record: `release-1.0.5-notes.md`; body:
   `release-1.0.5-body.md`. **Thunderstore not uploaded** (state unknown here).
 
+---
+
+# Plan: 1.0.6 — the fill-all key did nothing when the input was already carried (2026-10-23)
+
+**Reported by the owner:** with flametal in the inventory, shift-E over a `piece_blastfurnace` adds one
+flametal per press.
+
+**Cause — two of them, both in `StationPatches`:**
+
+1. The "the player already carries an input, so leave it to vanilla" guard ran before the modifier was
+   read. On the **ore** path it ignored the modifier entirely (a deliberate CraftFromContainers mirror:
+   CFC's input-ore guard returns true whatever `pullAll` says, its lines 471-482). On the fuel paths the
+   modifier *did* lift it, but …
+2. … `PullFromStorage` returned `pulled && requested`, and a fill whose stock is already in the inventory
+   produces **no plan lines at all** — `PullToInventoryCore` returns true with `requested = false` — so the
+   pull read as a failure, `FeedStation` broke out before feeding anything, and the interaction fell
+   through to vanilla: one item per press.
+
+So the report is the visible case of a family: fireplace fuel, smelter fuel, smelter ore and shield
+generator fuel all had it.
+
+**Fix**
+
+- `StationFeedRules.ShouldAttemptFeed(fillAll, playerHoldsInput)` — the rule as one tested predicate
+  (`fillAll || !playerHoldsInput`), used by all four guards so they cannot drift.
+- `PullFromStorage` returns `pulled` (the destination is satisfied), not `pulled && requested`; the debug
+  line still requires `requested`, because only then did anything actually move.
+- The ore divergence from CFC is documented at the guard and in the class remarks.
+
+### Task 1: fix the feed
+
+- [x] predicate + tests (`ShouldAttemptFeed`, two cases / four rows)
+- [x] four guards routed through it (fireplace fuel, smelter fuel, smelter ore, shield generator fuel)
+- [x] `PullFromStorage` satisfied semantics plus the docs that describe it
+- [x] `dotnet test` **264/264**; `BUILD OK - CraftFromDrawersAndChests 1.0.5` (Debug)
+
+### Task 2: version + docs
+
+- [x] 1.0.6 in `ModInfo.cs`/`manifest.json` and the CHANGELOG
+- [x] owner checklist in `author-verify.md`
+
+### Task 3 (owner): in-game checklist
+
+- [ ] Blast furnace, flametal **in the inventory**, shift-E: fills the queue in one press, taking the ore
+      from the inventory. With some in storage and some in hand, both are used; nothing lands on the ground.
+- [ ] Same for a fireplace's and a smelter's fuel, and a shield generator's fuel.
+- [ ] Released interaction is unchanged: plain `E` with the input in hand still adds one, from your own
+      inventory, exactly as vanilla did.
+- [ ] With storage and nothing in hand, the fill behaves exactly as in 1.0.5 (the 1.0.5 checks still hold).
+
