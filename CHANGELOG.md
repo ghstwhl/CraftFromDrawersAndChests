@@ -4,6 +4,41 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.11] - 2026-11-07
+
+### Added
+
+- **A requirement that is nearby but blocked no longer looks like one you do not have.** When storage
+  does not cover a requirement but the item sits in storage you cannot use, its readout keeps the
+  numbers, takes an amber tint and gains a marker (`0/1 *` by default), and a one-off message names the
+  item and the reason: `Seal Blubber is nearby but the storage holding it is switched off.` Both locks
+  count — this mod's per-storage switch, and storage that refuses you (another player's private chest,
+  or a chest a ward denies). New settings: `Blocked hint suffix`, `Blocked color`, `Blocked message`.
+- Pulls are unchanged: a blocked storage still supplies nothing, and a genuinely missing item looks
+  exactly as it did before. The hint is shown once per panel opening per ingredient and reason, so it
+  cannot fill the HUD.
+
+## [1.0.10] - 2026-11-07
+
+### Changed
+
+- **Built against Valheim 1.0.21**, up from 1.0.20. No behaviour change: of the 26 game members this mod
+  patches or reflects, not one changed signature or access. The 1.0.21 delta is station/save-system
+  internals — `CookingStation.SetSlot` gained an `Int64`, `Ship.UpdateSail`/`UpdateSailSize` gained a
+  `Boolean`, `PlayerProfile.GetStat` gained a `DifficultyRequirement` overload, and `SaveSystem`,
+  `SaveCollection` and `WearNTear` gained private members. Full evidence:
+  [`docs/sdd/2026-10-11-craft-from-drawers-and-chests/game-1.0.21-compat-analysis.md`](docs/sdd/2026-10-11-craft-from-drawers-and-chests/game-1.0.21-compat-analysis.md).
+
+### Fixed
+
+- **The debug readout can now name a storage that is switched off.** "I have it, but the panel says I do
+  not" was previously unanswerable from the log when the culprit was the per-storage off switch: a
+  switched-off storage is dropped before the pullable list is built, so it never appeared in the readout's
+  source list at all — and the readout's own `OFF` marker could never fire. With `Debug` enabled, an
+  unanswered requirement now lists in-range storages *including* switched-off ones, naming their contents
+  and marking them `OFF`: `[Drawer kg_ItemDrawer_Marble(Clone) 3m OFF count=78 zdo='SealBlubber'x78]`.
+  Pulls are unchanged — the extra storages are collected only for that log line.
+
 ## [1.0.9] - 2026-10-24
 
 ### Changed

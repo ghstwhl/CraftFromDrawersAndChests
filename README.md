@@ -92,6 +92,12 @@ under your crosshair, so **do not bind that key to a movement key**: the shipped
 `x`, and a key you press while walking (such as `W` or `S`) will silently toggle whatever you happen
 to be looking at.
 
+**A requirement is tinted amber and marked `*`, but I can see the item in a drawer.** That item is in
+storage this mod will not take from: the storage is switched off, or it refuses you — another
+player's private chest, or a chest a ward denies. The marker is *Blocked hint suffix*, the tint is
+*Blocked color*, and the one-off message names the item and the reason. Unlock or switch the storage
+back on and the row returns to normal; a genuine "you have none" stays unmarked.
+
 **Storage that is further away is ignored.** Only storage within *Maximum range* of you — or of the
 station, for the fuel, ore and cooking features — is used at all. `0` or less means unlimited, but
 that also means every storage you own is scanned.
