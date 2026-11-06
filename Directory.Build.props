@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <ValheimGameVersion>1.0.20</ValheimGameVersion>
+    <ValheimGameVersion>1.0.21</ValheimGameVersion>
     <BepInExVersion>5.4.2350</BepInExVersion>
 
     <!--
