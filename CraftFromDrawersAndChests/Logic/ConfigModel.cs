@@ -44,6 +44,9 @@ namespace CraftFromDrawersAndChests.Logic
         public const string IgnoreReinforcedChests = "Ignore reinforced chests";
         public const string ModEnabled = "Enable mod";
         public const string IsDebug = "Debug";
+        public const string BlockedHintSuffix = "Blocked hint suffix";
+        public const string BlockedColor = "Blocked color";
+        public const string BlockedMessage = "Blocked message";
 
         // Defaults: the values the ConfigEntry definitions use, so no default is written twice.
         //
@@ -56,6 +59,12 @@ namespace CraftFromDrawersAndChests.Logic
         public const bool DefaultEnableDrawers = true;
         public const bool DefaultLeaveOne = false;
         public const bool DefaultPullByDistance = false;
+
+        // The "nearby but blocked" hint. The suffix is a marker, not a sentence: the numbers the
+        // readout writes stay exactly what CraftFromContainers-style users expect, and an empty
+        // setting leaves the tint as the only signal. See AvailabilityHint.
+        public const string DefaultBlockedHintSuffix = AvailabilityHint.DefaultSuffix;
+        public const bool DefaultBlockedMessage = true;
 
         // The two held-modifier keys default to CFC 4.0.7's values. switchPrevent stays off, so out
         // of the box holding the prevent key suppresses pulling rather than enabling it.

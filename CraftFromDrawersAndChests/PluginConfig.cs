@@ -57,6 +57,9 @@ namespace CraftFromDrawersAndChests
         private static ConfigEntry<string> pulledMessage;
         private static ConfigEntry<Color> flashColor;
         private static ConfigEntry<Color> unFlashColor;
+        private static ConfigEntry<string> blockedHintSuffix;
+        private static ConfigEntry<Color> blockedColor;
+        private static ConfigEntry<bool> blockedMessage;
         private static ConfigEntry<bool> ignoreShipContainers;
         private static ConfigEntry<bool> ignoreWagonContainers;
         private static ConfigEntry<bool> ignoreWoodChests;
@@ -76,6 +79,13 @@ namespace CraftFromDrawersAndChests
         /// accessor, for the same reason as <see cref="FlashColor"/>.
         /// </summary>
         public static Color UnFlashColor => unFlashColor.Value;
+
+        /// <summary>
+        /// The colour a requirement's readout takes when its shortfall sits in storage that is switched
+        /// off or locked. A game-facing accessor for the same reason as the flash colours: it is
+        /// presentation, so <see cref="FeatureFlags"/> stays free of Unity types.
+        /// </summary>
+        public static Color BlockedColor => blockedColor.Value;
 
         /// <summary>
         /// Binds every config entry. Jötunn synchronises a plugin's own config file implicitly, so
@@ -117,6 +127,14 @@ namespace CraftFromDrawersAndChests
                 "Colour the resource readout flashes when the materials come from storage.");
             unFlashColor = Bind(config, ConfigModel.SectionServer, ConfigModel.UnFlashColor, Color.white,
                 "Colour the resource readout alternates with while flashing. Set both colours equal to disable the flash.");
+            blockedHintSuffix = Bind(config, ConfigModel.SectionServer, ConfigModel.BlockedHintSuffix,
+                ConfigModel.DefaultBlockedHintSuffix,
+                "Appended to a requirement's amount text when its shortfall is only in storage that is switched off or locked. Empty leaves the numbers bare; the colour still applies.");
+            blockedColor = Bind(config, ConfigModel.SectionServer, ConfigModel.BlockedColor, new Color(1f, 0.647f, 0f),
+                "Colour of a requirement's readout when its shortfall is only in storage that is switched off or locked.");
+            blockedMessage = Bind(config, ConfigModel.SectionServer, ConfigModel.BlockedMessage,
+                ConfigModel.DefaultBlockedMessage,
+                "Show a one-off message naming an ingredient that is nearby but held in storage that is switched off or locked.");
             ignoreShipContainers = Bind(config, ConfigModel.SectionServer, ConfigModel.IgnoreShipContainers, false,
                 "Ignore chests aboard ships.");
             ignoreWagonContainers = Bind(config, ConfigModel.SectionServer, ConfigModel.IgnoreWagonContainers, false,
@@ -201,6 +219,8 @@ namespace CraftFromDrawersAndChests
 
             flags.ResourceString = resourceString.Value;
             flags.PulledMessage = pulledMessage.Value;
+            flags.BlockedHintSuffix = blockedHintSuffix.Value;
+            flags.BlockedMessage = blockedMessage.Value;
 
             flags.IgnoreShipContainers = ignoreShipContainers.Value;
             flags.IgnoreWagonContainers = ignoreWagonContainers.Value;

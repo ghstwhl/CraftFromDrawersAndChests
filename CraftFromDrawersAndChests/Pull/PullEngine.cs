@@ -49,10 +49,44 @@ namespace CraftFromDrawersAndChests.Pull
         // every tracked container and query Item Drawers once per piece and per recipe. The same
         // per-frame cache is what CraftFromContainers kept. It is also what keeps a plan's SourceIds
         // valid for Execute: Plan and Execute are handed the very same list within the frame.
-        private static IReadOnlyList<IStorageSource> cachedSources;
-        private static Vec3 cachedOrigin;
-        private static FeatureFlags cachedFlags;
-        private static int cachedFrame = -1;
+        //
+        // Two independent slots, never one: the pullable list and the diagnostic list that also holds
+        // switched-off storages. Sharing a slot would let the pull path receive the diagnostic list -
+        // i.e. let it take items out of a storage the player switched off.
+        private static SourceCache pullCache;
+        private static SourceCache diagnosticCache;
+        private static BlockedCache blockedCache;
+
+        static PullEngine()
+        {
+            // Frame -1 is never a real frame, so an unset cache always misses.
+            pullCache.Frame = -1;
+            diagnosticCache.Frame = -1;
+            blockedCache.Frame = -1;
+        }
+
+        /// <summary>One per-frame source-list cache; see <see cref="Collect"/>.</summary>
+        private struct SourceCache
+        {
+            public IReadOnlyList<IStorageSource> Sources;
+            public Vec3 Origin;
+            public FeatureFlags Flags;
+            public int Frame;
+        }
+
+        /// <summary>
+        /// The per-frame cache for the blocked-storage list. A separate type rather than a third
+        /// <see cref="SourceCache"/> because the element type differs, and a separate slot for the same
+        /// reason the other two are separate: handing the blocked list to a pull would let it take from
+        /// a storage the player locked.
+        /// </summary>
+        private struct BlockedCache
+        {
+            public IReadOnlyList<StorageRegistry.BlockedStorage> Blocked;
+            public Vec3 Origin;
+            public FeatureFlags Flags;
+            public int Frame;
+        }
 
         /// <summary>
         /// The eligible storage for <paramref name="origin"/>, collected at most once per frame. See
@@ -62,22 +96,72 @@ namespace CraftFromDrawersAndChests.Pull
         /// </summary>
         public static IReadOnlyList<IStorageSource> Collect(Vec3 origin, FeatureFlags flags)
         {
+            return CollectCached(origin, flags, false, ref pullCache);
+        }
+
+        /// <summary>
+        /// The same list with the storages whose per-storage off switch is set added back in, cached
+        /// the same way. <b>Diagnostics only</b> — see
+        /// <see cref="StorageRegistry.CollectIncludingSwitchedOff"/>: the debug readout is the sole
+        /// caller, and it uses this to name a storage that holds the requirement while being switched
+        /// off. A pull must never be planned or executed against this list.
+        /// </summary>
+        public static IReadOnlyList<IStorageSource> CollectIncludingSwitchedOff(Vec3 origin, FeatureFlags flags)
+        {
+            return CollectCached(origin, flags, true, ref diagnosticCache);
+        }
+
+        private static IReadOnlyList<IStorageSource> CollectCached(
+            Vec3 origin, FeatureFlags flags, bool includeSwitchedOff, ref SourceCache cache)
+        {
             int frame = Time.frameCount;
-            if (cachedSources != null
-                && frame == cachedFrame
-                && ReferenceEquals(cachedFlags, flags)
-                && cachedOrigin.X == origin.X
-                && cachedOrigin.Y == origin.Y
-                && cachedOrigin.Z == origin.Z)
+            if (cache.Sources != null
+                && frame == cache.Frame
+                && ReferenceEquals(cache.Flags, flags)
+                && cache.Origin.X == origin.X
+                && cache.Origin.Y == origin.Y
+                && cache.Origin.Z == origin.Z)
             {
-                return cachedSources;
+                return cache.Sources;
             }
 
-            cachedSources = StorageRegistry.Collect(origin, flags);
-            cachedOrigin = origin;
-            cachedFlags = flags;
-            cachedFrame = frame;
-            return cachedSources;
+            cache.Sources = includeSwitchedOff
+                ? StorageRegistry.CollectIncludingSwitchedOff(origin, flags)
+                : StorageRegistry.Collect(origin, flags);
+            cache.Origin = origin;
+            cache.Flags = flags;
+            cache.Frame = frame;
+            return cache.Sources;
+        }
+
+        /// <summary>
+        /// The in-range storages that hold back what a requirement needs <i>because they are locked</i>,
+        /// with the reason, cached at most once per frame like the other lists.
+        /// <para>
+        /// This is the question behind the crafting readout's "nearby but blocked" hint, and the list is
+        /// <b>diagnostic only</b>: every entry is a storage the pull must not use. It is cached in its
+        /// own slot for exactly that reason — sharing a slot with <see cref="Collect"/> would let the
+        /// pull path receive a list of locked storages.
+        /// </para>
+        /// </summary>
+        public static IReadOnlyList<StorageRegistry.BlockedStorage> CollectBlocked(Vec3 origin, FeatureFlags flags)
+        {
+            int frame = Time.frameCount;
+            if (blockedCache.Blocked != null
+                && frame == blockedCache.Frame
+                && ReferenceEquals(blockedCache.Flags, flags)
+                && blockedCache.Origin.X == origin.X
+                && blockedCache.Origin.Y == origin.Y
+                && blockedCache.Origin.Z == origin.Z)
+            {
+                return blockedCache.Blocked;
+            }
+
+            blockedCache.Blocked = StorageRegistry.CollectBlocked(origin, flags);
+            blockedCache.Origin = origin;
+            blockedCache.Flags = flags;
+            blockedCache.Frame = frame;
+            return blockedCache.Blocked;
         }
 
         /// <summary>The prefab name behind a requirement's item, or null when it has no resolvable item.</summary>

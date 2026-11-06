@@ -68,6 +68,18 @@ namespace CraftFromDrawersAndChests.Patches
             new Dictionary<string, string>(System.StringComparer.Ordinal);
 
         /// <summary>
+        /// The blocked hints already shown while the crafting panel has been open, keyed by
+        /// <c>prefab|reasons</c>. <c>SetupRequirement</c> runs on every panel refresh, so without this
+        /// memo one ingredient's message would re-show continuously and bury the rest of the HUD. Cleared
+        /// whenever the panel's visibility changes, so opening the panel again says it again.
+        /// </summary>
+        private static readonly HashSet<string> hintedBlocked =
+            new HashSet<string>(System.StringComparer.Ordinal);
+
+        /// <summary>Whether the crafting panel was visible last frame, so a visibility change can reset the hints.</summary>
+        private static bool lastPanelVisible;
+
+        /// <summary>
         /// <c>Player.m_placementStatus</c>, the private placement status the game rewrites each frame.
         /// Resolved once, like the private <c>Container.CheckAccess</c> method the chest source uses.
         /// </summary>
@@ -316,7 +328,14 @@ namespace CraftFromDrawersAndChests.Patches
             }
 
             int available = held + fromStorage;
-            LogReadout(flags, prefab, sharedName, amount, held, fromStorage, sources, player);
+            LogReadout(flags, prefab, sharedName, amount, held, fromStorage, player);
+
+            // "You have none" and "it is right there but locked" must not look the same. Asked only when
+            // the requirement is actually short, so a covered recipe costs nothing extra.
+            int blockedStock = 0;
+            StorageBlockReasons blockedReasons = StorageBlockReasons.None;
+            if (available < amount)
+                blockedStock = BlockedStock(player, prefab, flags, out blockedReasons);
 
             Transform amountTransform = elementRoot.Find(ResAmountChild);
             if (amountTransform == null)
@@ -326,12 +345,110 @@ namespace CraftFromDrawersAndChests.Patches
             if (text == null)
                 return;
 
+            bool blocked = AvailabilityHint.ShouldHint(amount, available, blockedStock);
+
             // Flash only when storage is what closes the gap; a recipe the player already covers keeps
-            // vanilla's colour. CFC overwrites the readout's text either way.
-            if (playerShort && available >= amount)
+            // vanilla's colour. CFC overwrites the readout's text either way. A blocked shortfall takes
+            // its own colour: it must read neither like "there is none" nor like "storage covers it".
+            if (blocked)
+                text.color = PluginConfig.BlockedColor;
+            else if (playerShort && available >= amount)
                 text.color = Mathf.Sin(Time.time * 10f) > 0f ? PluginConfig.FlashColor : PluginConfig.UnFlashColor;
 
             text.text = PullKeyRules.ResourceAmountText(flags.ResourceString, available, amount);
+            if (blocked)
+            {
+                text.text += AvailabilityHint.Suffix(flags.BlockedHintSuffix);
+                ShowBlockedHint(player, req, prefab, blockedReasons, flags);
+            }
+        }
+
+        /// <summary>
+        /// How much of <paramref name="prefab"/> sits in in-range storage that is <b>locked</b> against
+        /// this player, and why — so the readout can tell "you have none" from "the drawer holding it is
+        /// switched off". Zero with <see cref="StorageBlockReasons.None"/> when no locked storage holds it.
+        /// <para>
+        /// Read-only: the list it walks is the diagnostic one (<see cref="PullEngine.CollectBlocked"/>,
+        /// cached per frame, so the per-frame panel refresh does not rescan the base), and a blocked
+        /// storage is never a pull source.
+        /// </para>
+        /// </summary>
+        private static int BlockedStock(
+            Player player, string prefab, FeatureFlags flags, out StorageBlockReasons reasons)
+        {
+            reasons = StorageBlockReasons.None;
+            if (player == null || string.IsNullOrEmpty(prefab) || flags == null)
+                return 0;
+
+            IReadOnlyList<StorageRegistry.BlockedStorage> blocked =
+                PullEngine.CollectBlocked(PullEngine.OriginOf(player), flags);
+
+            int stock = 0;
+            for (int i = 0; i < blocked.Count; i++)
+            {
+                IStorageSource source = blocked[i].Source;
+                if (source == null || !source.IsValid)
+                    continue;
+
+                int count = source.Count(prefab);
+                if (count <= 0)
+                    continue;
+
+                stock += count;
+                reasons |= ReasonOf(blocked[i].Reason);
+            }
+            return stock;
+        }
+
+        /// <summary>The hint's reason flag for one blocked storage's lock, or none when it is not a lock.</summary>
+        private static StorageBlockReasons ReasonOf(StorageBlockReason reason)
+        {
+            switch (reason)
+            {
+                case StorageBlockReason.SwitchedOff:
+                    return StorageBlockReasons.SwitchedOff;
+                case StorageBlockReason.NoAccess:
+                    return StorageBlockReasons.NoAccess;
+                default:
+                    return StorageBlockReasons.None;
+            }
+        }
+
+        /// <summary>
+        /// The one-off HUD line for a blocked requirement, shown once per panel opening per
+        /// (prefab, reason) pair — see <see cref="hintedBlocked"/> for why the memo is needed at all.
+        /// </summary>
+        private static void ShowBlockedHint(
+            Player player, Piece.Requirement req, string prefab, StorageBlockReasons reasons, FeatureFlags flags)
+        {
+            if (player == null || flags == null || !flags.BlockedMessage || string.IsNullOrEmpty(prefab))
+                return;
+
+            if (!hintedBlocked.Add(prefab + "|" + (int)reasons))
+                return;
+
+            string message = AvailabilityHint.Message(LocalizedItemName(req), reasons);
+            if (message.Length == 0)
+                return;
+
+            ShowMessage(player, message);
+        }
+
+        /// <summary>
+        /// The requirement item's localized display name, or null when it cannot be read — the hint
+        /// falls back to a generic subject rather than printing a localization key.
+        /// </summary>
+        private static string LocalizedItemName(Piece.Requirement req)
+        {
+            if (req == null || req.m_resItem == null)
+                return null;
+
+            ItemDrop.ItemData data = req.m_resItem.m_itemData;
+            if (data == null || data.m_shared == null || string.IsNullOrEmpty(data.m_shared.m_name))
+                return null;
+
+            Localization localization = Localization.instance;
+            return localization != null ? localization.Localize(data.m_shared.m_name) : data.m_shared.m_name;
         }
 
         /// <summary>
@@ -339,7 +456,7 @@ namespace CraftFromDrawersAndChests.Patches
         /// panel says I do not have it, but it is in a drawer" can be answered from a player's own log
         /// instead of guessed at. Debug-only, and silent while the numbers do not change.
         /// <para>
-        /// When a requirement is neither carried nor found in storage, every in-range source is named
+        /// When a requirement is neither carried nor found in storage, every in-range storage is named
         /// with its kind, its whole-metre distance, what it reported for this prefab and whether its
         /// per-storage switch is off — and, for a drawer, the raw prefab string and amount its ZDO
         /// holds. That last pair is the only place both halves of a mismatch can be seen at once: a
@@ -347,10 +464,18 @@ namespace CraftFromDrawersAndChests.Patches
         /// exactly like a drawer that is out of range or switched off, and none of those is visible in
         /// the game's own UI.
         /// </para>
+        /// <para>
+        /// The list comes from <see cref="PullEngine.CollectIncludingSwitchedOff"/>, not from the
+        /// pullable one: a switched-off storage is dropped by eligibility before the pullable list is
+        /// built, so reading that list made this report structurally unable to say "it is right there,
+        /// but you switched that drawer off". Those storages are marked <c>OFF</c> and their count is
+        /// still read, so the line reads
+        /// <c>[Drawer kg_ItemDrawer_Marble(Clone) 3m OFF count=78 zdo='SealBlubber'x78]</c>.
+        /// </para>
         /// </summary>
         private static void LogReadout(
             FeatureFlags flags, string prefab, string sharedName, int amount, int held, int fromStorage,
-            IReadOnlyList<IStorageSource> sources, Player player)
+            Player player)
         {
             if (flags == null || !flags.IsDebug)
                 return;
@@ -362,10 +487,11 @@ namespace CraftFromDrawersAndChests.Patches
 
             // Only an unanswered requirement has anything to explain, and naming the sources keeps the
             // ordinary case down to one line.
-            if (held < amount && fromStorage == 0 && sources != null)
+            if (held < amount && fromStorage == 0 && player != null)
             {
                 Vec3 origin = PullEngine.OriginOf(player);
-                report.Append(" | nothing holds it; ").Append(sources.Count).Append(" source(s) in range:");
+                IReadOnlyList<IStorageSource> sources = PullEngine.CollectIncludingSwitchedOff(origin, flags);
+                report.Append(" | nothing pullable holds it; ").Append(sources.Count).Append(" source(s) in range:");
                 for (int i = 0; i < sources.Count; i++)
                 {
                     IStorageSource source = sources[i];
@@ -411,7 +537,16 @@ namespace CraftFromDrawersAndChests.Patches
             bool changed = allowed != lastAllowed;
             lastAllowed = allowed;
 
-            if (!changed || __instance == null || ___m_animator == null || !___m_animator.GetBool("visible"))
+            // A blocked-storage hint is worth saying once each time the panel is opened; clearing the
+            // memo on any visibility change is what makes "once" mean that rather than "once a session".
+            bool visible = __instance != null && ___m_animator != null && ___m_animator.GetBool("visible");
+            if (visible != lastPanelVisible)
+            {
+                lastPanelVisible = visible;
+                hintedBlocked.Clear();
+            }
+
+            if (!changed || !visible)
                 return;
 
             if (Player.m_localPlayer == null)

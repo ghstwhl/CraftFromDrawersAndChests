@@ -41,6 +41,12 @@ namespace CraftFromDrawersAndChests.Logic
         public string ResourceString { get; set; }
         public string PulledMessage { get; set; }
 
+        /// <summary>Marker appended to a requirement's amount text when its shortfall is only in locked storage.</summary>
+        public string BlockedHintSuffix { get; set; }
+
+        /// <summary>Whether the one-off HUD line naming a blocked ingredient is shown.</summary>
+        public bool BlockedMessage { get; set; }
+
         public bool IgnoreShipContainers { get; set; }
         public bool IgnoreWagonContainers { get; set; }
         public bool IgnoreWoodChests { get; set; }

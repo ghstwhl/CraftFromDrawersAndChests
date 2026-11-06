@@ -253,5 +253,198 @@ namespace CraftFromDrawersAndChests.Tests.Logic
             Assert.That(Eligibility.IsWithinRange(0f, float.MaxValue), Is.True);
             Assert.That(Eligibility.IsWithinRange(-1f, float.MaxValue), Is.True);
         }
+
+        // --- IsEligibleButForSwitch: the diagnostic question the debug readout asks ---
+        //
+        // The readout must be able to say "this storage holds what you need but is switched off",
+        // and a switched-off storage is filtered out before the pullable list is built, so it can
+        // never appear there. These tests pin the one difference between the two predicates: the
+        // switch. Every other exclusion must still apply, or the readout would blame the switch for
+        // a storage the pull could not use anyway.
+
+        [Test]
+        public void SwitchedOffDrawer_IsNotEligible_ButIsEligibleButForSwitch()
+        {
+            var c = Drawer(new Vec3(1f, 0f, 0f), toggledOff: true);
+            var rules = new ChestTypeRules();
+
+            Assert.That(Eligibility.IsEligible(c, Origin, 10f, chestsEnabled: true, drawersEnabled: true, rules), Is.False);
+            Assert.That(
+                Eligibility.IsEligibleButForSwitch(c, Origin, 10f, chestsEnabled: true, drawersEnabled: true, rules),
+                Is.True);
+        }
+
+        [Test]
+        public void SwitchedOffChestInsideAPiece_IsEligibleButForSwitch()
+        {
+            var c = Chest(new Vec3(1f, 0f, 0f), toggledOff: true);
+            var rules = new ChestTypeRules();
+
+            Assert.That(Eligibility.IsEligible(c, Origin, 10f, chestsEnabled: true, drawersEnabled: true, rules), Is.False);
+            Assert.That(
+                Eligibility.IsEligibleButForSwitch(c, Origin, 10f, chestsEnabled: true, drawersEnabled: true, rules),
+                Is.True);
+        }
+
+        [Test]
+        public void EligibleStorage_IsEligibleButForSwitchToo()
+        {
+            // The predicate is not "off only": for an eligible storage both answers agree, so the
+            // diagnostic list is the pullable list plus the switched-off storages and nothing else.
+            var c = Drawer(new Vec3(1f, 0f, 0f));
+            var rules = new ChestTypeRules();
+
+            Assert.That(
+                Eligibility.IsEligibleButForSwitch(c, Origin, 10f, chestsEnabled: true, drawersEnabled: true, rules),
+                Is.True);
+        }
+
+        [Test]
+        public void SwitchedOffChestOutsideAPiece_IsNotEligibleButForSwitch()
+        {
+            // A loose container is excluded for a reason the switch cannot excuse.
+            var c = Chest(new Vec3(1f, 0f, 0f), toggledOff: true, isInsidePiece: false);
+
+            Assert.That(
+                Eligibility.IsEligibleButForSwitch(c, Origin, 10f, chestsEnabled: true, drawersEnabled: true, new ChestTypeRules()),
+                Is.False);
+        }
+
+        [Test]
+        public void SwitchedOffChestBeyondRange_IsNotEligibleButForSwitch()
+        {
+            var c = Chest(new Vec3(20f, 0f, 0f), toggledOff: true);
+
+            Assert.That(
+                Eligibility.IsEligibleButForSwitch(c, Origin, 10f, chestsEnabled: true, drawersEnabled: true, new ChestTypeRules()),
+                Is.False);
+        }
+
+        [Test]
+        public void SwitchedOffDrawerWithDrawersDisabled_IsNotEligibleButForSwitch()
+        {
+            var c = Drawer(new Vec3(1f, 0f, 0f), toggledOff: true);
+
+            Assert.That(
+                Eligibility.IsEligibleButForSwitch(c, Origin, 10f, chestsEnabled: true, drawersEnabled: false, new ChestTypeRules()),
+                Is.False);
+        }
+
+        // --- TryBlockReason: the two states a player would call a lock ---
+        //
+        // The crafting readout asks "is this thing nearby, holding my item, but locked?" A true answer
+        // must mean exactly that: in range, of an enabled kind, otherwise well-formed as storage, and
+        // blocked only by the switch or by access. Everything else is "not a source" and must stay
+        // silent, or the hint would blame a lock for a chest 90 m away.
+
+        [Test]
+        public void SwitchedOffDrawer_IsBlockedByTheSwitch()
+        {
+            var c = Drawer(new Vec3(1f, 0f, 0f), toggledOff: true);
+
+            Assert.That(
+                Eligibility.TryBlockReason(c, Origin, 10f, true, true, new ChestTypeRules(), out var reason),
+                Is.True);
+            Assert.That(reason, Is.EqualTo(StorageBlockReason.SwitchedOff));
+        }
+
+        [Test]
+        public void SwitchedOffChest_IsBlockedByTheSwitch()
+        {
+            var c = Chest(new Vec3(1f, 0f, 0f), toggledOff: true);
+
+            Assert.That(
+                Eligibility.TryBlockReason(c, Origin, 10f, true, true, new ChestTypeRules(), out var reason),
+                Is.True);
+            Assert.That(reason, Is.EqualTo(StorageBlockReason.SwitchedOff));
+        }
+
+        [Test]
+        public void ChestThatDeniesAccess_IsBlockedAsLocked()
+        {
+            // Another player's private chest.
+            var c = Chest(new Vec3(1f, 0f, 0f), hasAccess: false);
+
+            Assert.That(
+                Eligibility.TryBlockReason(c, Origin, 10f, true, true, new ChestTypeRules(), out var reason),
+                Is.True);
+            Assert.That(reason, Is.EqualTo(StorageBlockReason.NoAccess));
+        }
+
+        [Test]
+        public void ChestDeniedByAWard_IsBlockedAsLocked()
+        {
+            var c = Chest(new Vec3(1f, 0f, 0f), passesGuardStone: false);
+
+            Assert.That(
+                Eligibility.TryBlockReason(c, Origin, 10f, true, true, new ChestTypeRules(), out var reason),
+                Is.True);
+            Assert.That(reason, Is.EqualTo(StorageBlockReason.NoAccess));
+        }
+
+        [Test]
+        public void SwitchWinsOverAccess_WhenBothApply()
+        {
+            // The player's own action is the more useful explanation, and one reason keeps the HUD
+            // line short.
+            var c = Chest(new Vec3(1f, 0f, 0f), toggledOff: true, hasAccess: false);
+
+            Assert.That(
+                Eligibility.TryBlockReason(c, Origin, 10f, true, true, new ChestTypeRules(), out var reason),
+                Is.True);
+            Assert.That(reason, Is.EqualTo(StorageBlockReason.SwitchedOff));
+        }
+
+        [Test]
+        public void EligibleStorage_IsNotReportedAsBlocked()
+        {
+            Assert.That(
+                Eligibility.TryBlockReason(Chest(new Vec3(1f, 0f, 0f)), Origin, 10f, true, true, new ChestTypeRules(), out _),
+                Is.False);
+            Assert.That(
+                Eligibility.TryBlockReason(Drawer(new Vec3(1f, 0f, 0f)), Origin, 10f, true, true, new ChestTypeRules(), out _),
+                Is.False);
+        }
+
+        [Test]
+        public void OutOfRangeStorage_IsNotReportedAsBlocked()
+        {
+            var c = Chest(new Vec3(50f, 0f, 0f), toggledOff: true);
+
+            Assert.That(
+                Eligibility.TryBlockReason(c, Origin, 10f, true, true, new ChestTypeRules(), out _),
+                Is.False);
+        }
+
+        [Test]
+        public void DisabledStorageKinds_AreNotReportedAsBlocked()
+        {
+            Assert.That(
+                Eligibility.TryBlockReason(Drawer(new Vec3(1f, 0f, 0f), toggledOff: true), Origin, 10f, true, false, new ChestTypeRules(), out _),
+                Is.False);
+            Assert.That(
+                Eligibility.TryBlockReason(Chest(new Vec3(1f, 0f, 0f), toggledOff: true), Origin, 10f, false, true, new ChestTypeRules(), out _),
+                Is.False);
+        }
+
+        [Test]
+        public void ChestExcludedForBeingOutsideAPiece_IsNotReportedAsBlocked()
+        {
+            var c = Chest(new Vec3(1f, 0f, 0f), toggledOff: true, isInsidePiece: false);
+
+            Assert.That(
+                Eligibility.TryBlockReason(c, Origin, 10f, true, true, new ChestTypeRules(), out _),
+                Is.False);
+        }
+
+        [Test]
+        public void ChestExcludedByItsType_IsNotReportedAsBlocked()
+        {
+            // A config exclusion is not a lock: the player chose not to use that chest kind.
+            var rules = new ChestTypeRules { IgnoreWoodChests = true };
+            var c = Chest(new Vec3(1f, 0f, 0f), objectName: "piece_chest_wood(Clone)", toggledOff: true);
+
+            Assert.That(Eligibility.TryBlockReason(c, Origin, 10f, true, true, rules, out _), Is.False);
+        }
     }
 }

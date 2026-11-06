@@ -58,6 +58,26 @@ namespace CraftFromDrawersAndChests.Logic
     }
 
     /// <summary>
+    /// Why a storage that holds an item cannot be used for it, when the reason is a <b>lock</b> rather
+    /// than a disqualification. Consumed by <see cref="AvailabilityHint" /> (via
+    /// <see cref="Eligibility.TryBlockReason" />), never by the pull path.
+    /// </summary>
+    public enum StorageBlockReason
+    {
+        /// <summary>Not blocked: either usable, or not a storage the player would call locked.</summary>
+        None = 0,
+
+        /// <summary>The player switched this storage off with the per-storage toggle.</summary>
+        SwitchedOff,
+
+        /// <summary>
+        /// The storage refuses this player — another player's private chest, or a chest a ward denies
+        /// (<c>Container.CheckAccess</c>, or the guard-stone check for the chest's position).
+        /// </summary>
+        NoAccess
+    }
+
+    /// <summary>
     /// The single predicate that decides whether a storage is a candidate pull source: in range
     /// of the origin, enabled for its kind, not switched off, and — for a chest only — inside a
     /// <c>Piece</c>, granted by its guard stone, accessible, carrying an inventory and not excluded
@@ -67,9 +87,20 @@ namespace CraftFromDrawersAndChests.Logic
     /// Range is compared on squared distances; <see cref="Vec3.SqrDistanceTo"/> avoids a square
     /// root per candidate. Distance equal to the range counts as in range.
     /// </para>
+    /// <para>
+    /// <see cref="IsEligibleButForSwitch"/> is the same decision with the per-storage off switch
+    /// taken out, and it exists for <b>diagnostics only</b>: a switched-off storage is filtered out
+    /// before the pullable list is built, so it can never appear there, and the debug readout would
+    /// otherwise report "nothing holds it" with no way to say that the item is sitting in a storage
+    /// the player switched off. It must never be used to decide what a pull may take from.
+    /// </para>
     /// </summary>
     public static class Eligibility
     {
+        /// <summary>
+        /// Whether the storage may serve a pull: <see cref="IsEligibleButForSwitch"/> and not
+        /// switched off. This is the only predicate the pull path may use.
+        /// </summary>
         public static bool IsEligible(
             in StorageCandidate c,
             Vec3 origin,
@@ -81,6 +112,28 @@ namespace CraftFromDrawersAndChests.Logic
             if (c.ToggledOff)
                 return false;
 
+            return IsEligibleButForSwitch(c, origin, range, chestsEnabled, drawersEnabled, chestRules);
+        }
+
+        /// <summary>
+        /// Whether the storage would be a pull source if its per-storage off switch were not set.
+        /// Every other exclusion still applies, so a loose container, an out-of-range storage, an
+        /// inaccessible one or one whose kind is disabled is <c>false</c> here too — the switch is
+        /// the only reason this answer can differ from <see cref="IsEligible"/>.
+        /// <para>
+        /// Diagnostic only. See the type remarks: the debug readout uses it to name a storage that
+        /// holds the requirement while being switched off, which is otherwise indistinguishable from
+        /// the requirement simply not being in storage.
+        /// </para>
+        /// </summary>
+        public static bool IsEligibleButForSwitch(
+            in StorageCandidate c,
+            Vec3 origin,
+            float range,
+            bool chestsEnabled,
+            bool drawersEnabled,
+            ChestTypeRules chestRules)
+        {
             if (!IsWithinRange(range, c.Position.SqrDistanceTo(origin)))
                 return false;
 
@@ -103,6 +156,86 @@ namespace CraftFromDrawersAndChests.Logic
             // components. A null name selects no name-based rule.
             string objectName = c.ObjectName ?? string.Empty;
             return !chestRules.IsExcluded(objectName, c.ParentIsShip, c.ParentIsWagon);
+        }
+
+        /// <summary>
+        /// Whether the storage is in range, of an enabled kind, otherwise well-formed as storage, and
+        /// excluded <b>only</b> because it is locked — and if so, which lock.
+        /// <para>
+        /// This is the question behind the crafting readout's "nearby but blocked" hint: a true answer
+        /// means <i>"this thing is right here, it holds your item, and it will not give it to you"</i>.
+        /// Every other exclusion answers false, because it is not a lock: a storage that is out of range
+        /// or whose kind is disabled was never a candidate, a loose container or an ignored chest type is
+        /// excluded by configuration, and reporting any of them would turn "you have none nearby" into
+        /// noise.
+        /// </para>
+        /// <para>
+        /// Usable storage answers false too — it is counted as available instead — so the hint and the
+        /// availability count can never describe the same source twice.
+        /// </para>
+        /// <para>
+        /// The switch is checked before access, so a chest that is both switched off and denied reports
+        /// <see cref="StorageBlockReason.SwitchedOff" />: the player's own action is the more useful
+        /// explanation, and one reason keeps the HUD line short.
+        /// </para>
+        /// </summary>
+        /// <param name="c">The candidate, flattened at the game edge.</param>
+        /// <param name="origin">The pull origin the range is measured from.</param>
+        /// <param name="range">The configured maximum range; zero or less means unlimited.</param>
+        /// <param name="chestsEnabled">Whether vanilla chests may be used at all.</param>
+        /// <param name="drawersEnabled">Whether drawers may be used at all.</param>
+        /// <param name="chestRules">The chest-type exclusions; a config exclusion is not a lock.</param>
+        /// <param name="reason">The lock, when this returns true; otherwise <see cref="StorageBlockReason.None" />.</param>
+        public static bool TryBlockReason(
+            in StorageCandidate c,
+            Vec3 origin,
+            float range,
+            bool chestsEnabled,
+            bool drawersEnabled,
+            ChestTypeRules chestRules,
+            out StorageBlockReason reason)
+        {
+            reason = StorageBlockReason.None;
+
+            // Usable storage is availability, not a block; the readout counts it separately.
+            if (IsEligible(c, origin, range, chestsEnabled, drawersEnabled, chestRules))
+                return false;
+
+            // Not-a-candidate first: these are not locks, and an out-of-range storage must never
+            // produce a hint naming it.
+            if (!IsWithinRange(range, c.Position.SqrDistanceTo(origin)))
+                return false;
+
+            if (c.Kind == StorageKind.Drawer)
+            {
+                // A drawer carries no access rule in this mod (the mod passes hasAccess=false for one),
+                // so the switch is the only lock it can have.
+                if (!drawersEnabled || !c.ToggledOff)
+                    return false;
+
+                reason = StorageBlockReason.SwitchedOff;
+                return true;
+            }
+
+            if (!chestsEnabled || !c.HasInventory || !c.IsInsidePiece)
+                return false;
+
+            if (chestRules.IsExcluded(c.ObjectName ?? string.Empty, c.ParentIsShip, c.ParentIsWagon))
+                return false;
+
+            if (c.ToggledOff)
+            {
+                reason = StorageBlockReason.SwitchedOff;
+                return true;
+            }
+
+            if (!c.HasAccess || !c.PassesGuardStone)
+            {
+                reason = StorageBlockReason.NoAccess;
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>
