@@ -4,6 +4,17 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.24] - 2026-11-27 (test build, not released)
+
+### Changed
+
+- Rebuilt against Valheim 1.0.31 (hotfix, 2026-11-27) and verified compatibility. No behaviour change here.
+- Verification detail: the hotfix is tiny and touches nothing this mod uses. `assembly_valheim` gained
+  `BuildUi.SearchFieldSelect(string)` and `BuildUi.SearchFieldDeselect(string)` and lost
+  `BuildUiFavoriteCategoryCheckButton.Awake()`; the API surface of every type this mod patches or
+  reflects is unchanged. `assembly_utils` is identical member for member. All 23 patched targets
+  resolve and the reflection-only targets are all present; 332/332 unit tests pass.
+
 ## [1.0.23] - 2026-11-27
 
 This release folds in everything since 1.0.11, which was published on 2026-11-07. The intermediate

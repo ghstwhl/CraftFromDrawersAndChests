@@ -292,3 +292,19 @@ without a MultiUserChest change", rather than another request-shaped guess.
       IL, and the Release folder rebuilt clean afterwards.
 - [x] Published on the owner's instruction (2026-11-27): commit `0ed84e8` on `main`, tag `v1.0.23`, and a GitHub release carrying `CraftFromDrawersAndChests-1.0.23.zip`.
 - [ ] Still open, and shipped as a known issue: chest locking can leave a container open without handing over ownership when MultiUserChest is installed (see `No-Chest-Block/Docs/in-use-open-not-synced.md`).
+
+# Done: Valheim 1.0.31 compatibility (1.0.24, 2026-11-27)
+
+- [x] Confirmed the release: Steam news "Hotfix 1.0.31" (2026-11-27 03:06 local) and the installed
+      `assembly_valheim.dll` rewritten 2026-11-27 05:22:45 (appmanifest buildid 26948984).
+- [x] Rebuilt the references for 1.0.31 and pointed `Directory.Build.props` at `1.0.31`.
+- [x] API diff, 1.0.30 vs 1.0.31 (24,553 -> 24,554 signatures after dropping compiler noise): **3 lines** in
+      `assembly_valheim` - added `BuildUi.SearchFieldSelect(string)` and `BuildUi.SearchFieldDeselect(string)`,
+      removed `BuildUiFavoriteCategoryCheckButton.Awake()`. **Nothing this mod touches changed.**
+      `assembly_utils` is identical (2,055 vs 2,055 members, zero diff).
+- [x] `Test-PatchTargets.ps1 -GameVersion 1.0.31`: **23/23 patch classes PASS**, exit 0.
+- [x] Reflection-only targets confirmed present (`Inventory.GetAmmoItem`, `Attack.EquipAmmoItem`,
+      `Turret.GetAmmoType` + `m_allowedAmmo`/`m_defaultAmmo`/`m_maxAmmo`/`m_ammoType`, `Container.CheckAccess`,
+      `InventoryGui.UpdateCraftingPanel`, `Player.m_placementStatus`, `Player.HaveRequirementItems`).
+- [x] 332/332 tests pass; Release 1.0.24 packaged.
+- [ ] Open, unchanged: the MultiUserChest chest-locking issue shipped as a known issue in 1.0.23.

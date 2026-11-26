@@ -1,6 +1,6 @@
 {
   "name": "CraftFromDrawersAndChests",
-  "version_number": "1.0.23",
+  "version_number": "1.0.24",
   "website_url": "https://github.com/ghstwhl/CraftFromDrawersAndChests",
   "description": "Craft and build from nearby chests and KG Item Drawers drawers, fire arrows and bolts straight from your Adventure Backpacks backpack, and fuel stations and plateautems from storage. Every player and the server need it.",
   "dependencies": [
