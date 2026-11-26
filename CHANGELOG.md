@@ -4,7 +4,29 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.23] - 2026-11-26 (test build, not released)
+## [1.0.23] - 2026-11-27
+
+This release folds in everything since 1.0.11, which was published on 2026-11-07. The intermediate
+numbers 1.0.16 through 1.0.22 were test builds and were never published.
+
+### Added
+
+- **A Ballista can be loaded from your storage.** A turret that has never been loaded reports no ammo type
+  at all (`RPC_AddAmmo` is the only thing that records one), so the search for a matching item came up
+  empty and the ballista stayed silent. The recorded ammo type is now tried first, then the turret's own
+  allowed-ammo list, and the recorded type is trusted outright once the turret actually holds ammo.
+- **A Plateautem can be fuelled from your storage, holding E fills it.** The selected fuel is pulled from
+  the storage around the totem - stone while the totem is in its stone mode, otherwise whichever fuel the
+  item list has selected - and the fill targets the totem's real capacity instead of drizzling one unit
+  per press. Fuel that is only in your equipped Adventure Backpacks backpack counts too: the totem counts
+  through the game's own inventory call, so the backpack bridge is opened around the pull.
+- **Arrows and bolts fire straight out of an equipped Adventure Backpacks backpack.** The bow's ammo
+  lookup only ever walks your inventory, and a foreign item cannot be removed by the inventory either, so
+  answering the lookup alone would have fired arrows for free. The round is spent inside the backpack
+  instead, and the stack never moves. Loading a bow or crossbow works with every inventory slot full.
+- **A diagnostic build that cannot have Debug switched off** (`FORCED_DEBUG`), for capturing logs from a
+  player who cannot turn on an admin-only setting. Never part of a published package; the recipe lives in
+  `tools/README.md`.
 
 ### Changed
 
@@ -19,6 +41,12 @@ All notable changes to this mod are documented here. The format is based on
   In `assembly_utils` the only change reaching the mod's dependencies is that `ZInput.GetButtonDown` is
   unchanged while the dead-zone constants were reshuffled; the removed `BrotliCompressor` is unused here.
 - All 332 unit tests pass on the new references.
+
+### Known issues
+
+- **Chest locking can still leave a container open without handing over ownership when MultiUserChest is
+  installed.** The report and its evidence are with the MultiUserChest author; the capture from a second
+  player is recorded locally and the investigation continues.
 
 ## [1.0.22] - 2026-11-22 (test build, not released)
 

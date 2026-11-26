@@ -290,4 +290,5 @@ without a MultiUserChest change", rather than another request-shaped guess.
 - [x] Forced-debug 1.0.23 packaged separately for the outstanding chest-locking capture
       (`CraftFromDrawersAndChests-1.0.23-FORCED-DEBUG.zip`), banner verified, initialiser verified in
       IL, and the Release folder rebuilt clean afterwards.
-- [ ] Still blocked: release of 1.0.23 pending another player's chest-locking logs.
+- [x] Published on the owner's instruction (2026-11-27): commit `0ed84e8` on `main`, tag `v1.0.23`, and a GitHub release carrying `CraftFromDrawersAndChests-1.0.23.zip`.
+- [ ] Still open, and shipped as a known issue: chest locking can leave a container open without handing over ownership when MultiUserChest is installed (see `No-Chest-Block/Docs/in-use-open-not-synced.md`).
