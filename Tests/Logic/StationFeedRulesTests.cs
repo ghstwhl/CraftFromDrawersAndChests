@@ -371,5 +371,85 @@ namespace CraftFromDrawersAndChests.Tests.Logic
                 StationFeedRules.FillAllHint("shift", "ore tooltip"),
                 Is.EqualTo("\n[<color=yellow><b>shift+$KEY_Use</b></color>] ore tooltip max"));
         }
+
+        // ---------------- TurretAmmoOrder ----------------
+        //
+        // A turret's own ZDO records the ammunition type, but only once ammunition has been loaded:
+        // Turret.RPC_AddAmmo is the only writer of ZDO "ammoType", and GetAmmoType() falls back to
+        // that ZDO string when the prefab sets no m_defaultAmmo (the ballista sets none). A freshly
+        // built turret therefore reports an empty type, and 1.0.15 asked storage for that empty name
+        // and stopped. Vanilla accepts any of Turret.m_allowedAmmo while the turret holds no
+        // ammunition, and only the recorded type once it holds some (Turret.UseItem's
+        // "GetAmmo() > 0 && GetAmmoType() != name" refusal).
+
+        [Test]
+        public void TurretAmmoOrder_RecordedTypeAndAmmoHeld_OffersOnlyThatType()
+        {
+            // With ammunition already inside, vanilla refuses a different type, so asking storage for
+            // anything else would only pull an item it will not accept.
+            IReadOnlyList<string> order = StationFeedRules.TurretAmmoOrder(
+                "TurretBoltFlametal",
+                new[] { "TurretBolt", "TurretBoltWood", "TurretBoltFlametal" },
+                holdsAmmo: true);
+
+            Assert.That(order, Is.EqualTo(new[] { "TurretBoltFlametal" }));
+        }
+
+        [Test]
+        public void TurretAmmoOrder_AmmoHeldButNoRecordedType_OffersNothing()
+        {
+            // Defensive: without a recorded type there is no name vanilla would accept next to the
+            // ammunition already inside, so nothing is offered rather than something that is refused.
+            IReadOnlyList<string> order = StationFeedRules.TurretAmmoOrder(
+                string.Empty, new[] { "TurretBolt", "TurretBoltWood" }, holdsAmmo: true);
+
+            Assert.That(order, Is.Empty);
+        }
+
+        [Test]
+        public void TurretAmmoOrder_NoAmmoAndNoRecordedType_OffersEveryAllowedTypeInOrder()
+        {
+            // The reported case: a new ballista (ammoType '' , 0/40) beside a drawer of flametal bolts.
+            IReadOnlyList<string> order = StationFeedRules.TurretAmmoOrder(
+                string.Empty,
+                new[] { "TurretBolt", "TurretBoltWood", "TurretBoltFlametal", "TurretBoltBloodgold" },
+                holdsAmmo: false);
+
+            Assert.That(order, Is.EqualTo(new[]
+            {
+                "TurretBolt", "TurretBoltWood", "TurretBoltFlametal", "TurretBoltBloodgold"
+            }));
+        }
+
+        [Test]
+        public void TurretAmmoOrder_NoAmmoAndRecordedType_TriesRecordedTypeFirst()
+        {
+            // The recorded type is the one the turret last used, so it is asked for first, but an empty
+            // turret accepts any allowed type, so the rest follow.
+            IReadOnlyList<string> order = StationFeedRules.TurretAmmoOrder(
+                "TurretBoltWood",
+                new[] { "TurretBolt", "TurretBoltWood", "TurretBoltFlametal" },
+                holdsAmmo: false);
+
+            Assert.That(order, Is.EqualTo(new[] { "TurretBoltWood", "TurretBolt", "TurretBoltFlametal" }));
+        }
+
+        [Test]
+        public void TurretAmmoOrder_DropsBlankAndDuplicateNames()
+        {
+            IReadOnlyList<string> order = StationFeedRules.TurretAmmoOrder(
+                string.Empty,
+                new[] { null, string.Empty, "TurretBolt", "TurretBolt", "TurretBoltWood" },
+                holdsAmmo: false);
+
+            Assert.That(order, Is.EqualTo(new[] { "TurretBolt", "TurretBoltWood" }));
+        }
+
+        [Test]
+        public void TurretAmmoOrder_NoAllowedTypes_IsEmpty()
+        {
+            Assert.That(StationFeedRules.TurretAmmoOrder(string.Empty, null, holdsAmmo: false), Is.Empty);
+            Assert.That(StationFeedRules.TurretAmmoOrder(string.Empty, new string[0], holdsAmmo: false), Is.Empty);
+        }
     }
 }

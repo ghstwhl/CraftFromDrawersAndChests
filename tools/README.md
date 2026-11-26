@@ -139,6 +139,39 @@ msbuild CraftFromDrawersAndChests.sln /p:ReferencesRoot="C:\ValheimRefs"
 > **Note:** If you change `-GameVersion` / `-BepInExVersion`, keep them in sync with
 > `VALHEIM_INSTALL` / `BEPINEX_PATH` (or `ReferencesRoot`) in the csproj.
 
+## Forced-debug log-capture build (temporary, never released)
+
+`PluginConfig.ForceDebugForDiagnostics` is compiled in only when the `FORCED_DEBUG` symbol is
+defined, so a normal build can never contain it. The reason it exists: every config entry is
+`IsAdminOnly`, so a non-admin player cannot turn `Debug` on at all, and Jötunn pushes the server's
+value into the entry — a log-capture session needs debug on both clients regardless.
+
+`Build.ps1` does not forward extra MSBuild properties, so build the variant directly:
+
+```powershell
+$mb = 'C:\Program Files\Microsoft Visual Studio\<ver>\Community\MSBuild\Current\Bin\MSBuild.exe'
+& $mb 'CraftFromDrawersAndChests\CraftFromDrawersAndChests.csproj' `
+    /p:Configuration=Release '/p:DefineConstants=TRACE%3BFORCED_DEBUG' `
+    /p:DevPluginsFolder=C:\nonexistent-devplugins /nologo /v:minimal
+```
+
+The semicolon in the symbol list **must** be escaped as `%3B`, and setting
+`$env:DefineConstants` does **not** work (the csproj's own `<DefineConstants>` wins) — both cost a
+build to find out. Then copy `bin\Release\CraftFromDrawersAndChests.dll` into
+`Release\NorCal_Nerds-CraftFromDrawersAndChests\plugins\`, zip that folder under a distinct name,
+and re-run `Build.ps1 -Configuration Release` afterwards so the Release folder is not left holding a
+forced-debug DLL.
+
+Verify the **artifact**, not the source:
+
+- the banner literal `FORCED-DEBUG TEST BUILD` is in the DLL — scan the UTF-16 `#US` heap at byte
+  offset 1 as well as 0, or a literal at an odd offset reads as absent;
+- `cecil.ps1 -Type PluginConfig -Method .cctor -IL` shows `ldc.i4.1` + `stsfld
+  ForceDebugForDiagnostics` (a normal build has no initialiser there at all).
+
+Keep the version unchanged: `[NetworkCompatibility(..., VersionStrictness.Patch)]` disconnects any
+client whose build differs, so a log-capture build must carry the same version as the server.
+
 ### Legal
 
 Reference assemblies are derived from the game and tooling binaries and are **not**

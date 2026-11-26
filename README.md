@@ -6,6 +6,10 @@ the build hammer and the crafting menu pull their materials from every **chest**
 
 In short: CraftFromContainers, but for drawers too.
 
+It also bridges **Adventure Backpacks**: materials in your equipped backpack count while crafting and
+building, arrows and bolts fire straight out of it, and a **Plateautem** can be fuelled from it — none
+of which the game or those mods do on their own.
+
 **Install from Thunderstore:** <https://thunderstore.io/c/valheim/p/NorCal_Nerds/CraftFromDrawersAndChests/>
 
 ## Features
@@ -20,7 +24,9 @@ In short: CraftFromContainers, but for drawers too.
   for sailing to another continent without portal mats again!
 - **Station feeding.** Fireplaces, smelters, cooking stations and shield generators pull fuel, ore and
   cooking ingredients from storage. Hold the fill-all key (`left shift` by default) and use a station to
-  fill it to capacity in one press.
+  fill it to capacity in one press. Plateautems (erkle64's terrain-flattening totems) are fed the same
+  way: the mod asks the totem which item its current selection consumes — wood, coal, resin or stone —
+  and a held press fills it to the totem's own capacity.
 - **One range, both storage kinds.** A single range setting (default 10 m, and `0` or less
   means unlimited, matching CraftFromContainers) applies to chests and drawers alike.
 - **Per-storage switch.** Flip a chest or drawer off with a hotkey while hovering it, and
@@ -30,6 +36,17 @@ In short: CraftFromContainers, but for drawers too.
   count as held while crafting and building — under that mod's own rules, and without moving
   anything into your inventory to make it work. Only your own backpack is ever counted: another
   player's is never used, whether you are crafting, building or pulling.
+- **Plateautem ↔ Adventure Backpacks bridge.** Plateautem counts its fuel in your main inventory only
+  and never asks Adventure Backpacks for your backpack, so a totem with fuel only in the backpack
+  answers "no fuel". While this mod is installed the totem's fuel interaction runs inside Adventure
+  Backpacks' own crafting scope, so your equipped backpack both counts and *is* debited, exactly as it
+  is for a craft. Neither mod needs configuring for this; it applies only to the Plateautem, not to
+  other third-party stations.
+- **Backpack ammunition.** Arrows and bolts in your equipped backpack can be fired. Vanilla only looks
+  for ammunition in your inventory and never in the backpack, so a bow with its arrows packed away
+  reports you are out of them. Each shot is spent straight out of the backpack — the stack stays where
+  it is, exactly as Adventure Backpacks pays for a craft — and an ordinary shot from your inventory is
+  untouched.
 - **Server-authoritative config.** Settings are registered with Jötunn, so the server's
   values are pushed to clients and non-admins cannot change them.
 
@@ -47,9 +64,15 @@ In short: CraftFromContainers, but for drawers too.
   players can use the same chest at once without desync.
 - **KG Item Drawers 1.4.0** — optional. With it absent the mod runs chest-only; with it
   present, drawers are pulled from as well.
-- **Adventure Backpacks 2.3.x** — optional. With it installed, materials in your equipped
+- **Adventure Backpacks 2.x** (tested with 2.4.7) — optional. With it installed, materials in your equipped
   backpack count as held when crafting and building, using Adventure Backpacks' own rules
-  (including its *Leave One Item In Backpack* setting).
+  (including its *Leave One Item In Backpack* setting), and arrows and bolts can be fired straight out
+  of the backpack.
+- **Plateautem 0.4.3** — optional. With it installed, a plateautem is fed from nearby chests and
+  drawers — its selected fuel, up to its own capacity — and an equipped Adventure Backpacks backpack
+  can pay for that fuel (see *Plateautem ↔ Adventure Backpacks bridge* above). Tested against
+  Plateautem 0.4.3 and Adventure Backpacks 2.4.7; if either mod changes shape the bridge logs a warning
+  and switches itself off rather than guessing.
 
 ### Remove these before installing
 
@@ -91,6 +114,12 @@ mod will never pull from it. The switch is flipped by the *Toggle storage key* w
 under your crosshair, so **do not bind that key to a movement key**: the shipped default is
 `x`, and a key you press while walking (such as `W` or `S`) will silently toggle whatever you happen
 to be looking at.
+
+**A chest another player filled still reads as empty.** Known limitation: a chest's contents reach a
+client when the game sends them, and it sends a chest when a player takes ownership of it — opening it —
+not when a teammate fills it. Opening the chest yourself clears it for your client. A diagnostic build
+(`Debug` enabled) logs what each chest's local copy and ZDO claim, which is how this is being tracked;
+see [CHANGELOG.md](CHANGELOG.md).
 
 **A requirement is tinted amber and marked `*`, but I can see the item in a drawer.** That item is in
 storage this mod will not take from: the storage is switched off, or it refuses you — another

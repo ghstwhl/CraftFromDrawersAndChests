@@ -1,8 +1,8 @@
 {
   "name": "CraftFromDrawersAndChests",
-  "version_number": "1.0.11",
+  "version_number": "1.0.23",
   "website_url": "https://github.com/ghstwhl/CraftFromDrawersAndChests",
-  "description": "Craft and build from nearby chests and KG Item Drawers drawers. Every player and the server need it.",
+  "description": "Craft and build from nearby chests and KG Item Drawers drawers, fire arrows and bolts straight from your Adventure Backpacks backpack, and fuel stations and plateautems from storage. Every player and the server need it.",
   "dependencies": [
     "denikson-BepInExPack_Valheim-5.4.2351",
     "ValheimModding-Jotunn-2.30.2",

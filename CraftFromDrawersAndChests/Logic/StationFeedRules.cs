@@ -73,6 +73,60 @@ namespace CraftFromDrawersAndChests.Logic
         }
 
         /// <summary>
+        /// The turret ammunition prefabs to ask storage for, in the order to ask, given the type the
+        /// turret itself records, the types it accepts and whether it already holds ammunition.
+        /// <para>
+        /// <b>Why this exists.</b> A turret records its ammunition type in its own ZDO, but
+        /// <c>Turret.RPC_AddAmmo</c> is the only writer of that field — it is written when ammunition
+        /// is <i>first loaded</i>. <c>Turret.GetAmmoType()</c> returns <c>m_defaultAmmo.name</c> when the
+        /// prefab sets that field, and otherwise reads the ZDO string, so a freshly built turret reports
+        /// an <b>empty</b> type. Until 1.0.16 the turret patch asked storage for exactly that name and
+        /// stopped, which is why a new ballista beside a drawer of bolts never loaded from it (reported
+        /// from play 2026-11-21; the log showed <c>ammo 0/40, ammoType='', defaultAmmo='&lt;null&gt;',
+        /// allowed=TurretBolt,TurretBoltWood,TurretBoltFlametal,TurretBoltBloodgold</c>).
+        /// </para>
+        /// <para>
+        /// <b>Ordering follows vanilla's own rule.</b> <c>Turret.UseItem</c> refuses a type other than
+        /// the recorded one only while the turret already holds ammunition (<c>GetAmmo() &gt; 0 &amp;&amp;
+        /// GetAmmoType() != name</c>), so:
+        /// an empty turret may be offered every type in <c>m_allowedAmmo</c>, with the recorded type
+        /// tried first because it is the one the turret last used; a turret that already holds
+        /// ammunition is offered the recorded type alone. Blank names are dropped, duplicates keep
+        /// their first position, and the order is otherwise the turret's own — the same
+        /// stop-at-the-first-the-destination-holds walk the smelter's ores use.
+        /// </para>
+        /// </summary>
+        /// <param name="recordedType">The prefab name the turret reports, or empty when it has none yet.</param>
+        /// <param name="allowedTypes">The prefab names of every ammunition type the turret accepts.</param>
+        /// <param name="holdsAmmo">Whether the turret already holds ammunition.</param>
+        public static IReadOnlyList<string> TurretAmmoOrder(
+            string recordedType, IReadOnlyList<string> allowedTypes, bool holdsAmmo)
+        {
+            var order = new List<string>();
+
+            if (!string.IsNullOrEmpty(recordedType))
+                order.Add(recordedType);
+
+            // With ammunition already inside, vanilla refuses anything but the recorded type, so
+            // offering more would only pull an item the turret will not accept.
+            if (holdsAmmo)
+                return order;
+
+            if (allowedTypes != null)
+            {
+                for (int i = 0; i < allowedTypes.Count; i++)
+                {
+                    string name = allowedTypes[i];
+                    if (string.IsNullOrEmpty(name) || order.Contains(name))
+                        continue;
+                    order.Add(name);
+                }
+            }
+
+            return order;
+        }
+
+        /// <summary>
         /// How many fuel items a station whose fuel is a float can still take. Vanilla adds one unit of
         /// fuel per item and calls a fire full when the ceiling of its stored fuel reaches the
         /// capacity (<c>Fireplace.Interact</c> tests <c>Mathf.CeilToInt(num) &gt;= m_maxFuel</c>;

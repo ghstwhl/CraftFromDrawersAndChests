@@ -142,9 +142,14 @@
     <Compile Include="Logic\PullRunner.cs" />
     <Compile Include="Logic\StationFeedRules.cs" />
     <Compile Include="Logic\StorageKind.cs" />
+    <Compile Include="Logic\StorageRefreshRules.cs" />
+    <Compile Include="Logic\PlateautemFuelRules.cs" />
+    <Compile Include="Logic\BackpackAmmoRules.cs" />
     <Compile Include="Logic\ToggleRules.cs" />
     <Compile Include="Patches\CraftPatches.cs" />
     <Compile Include="Patches\PullKeyPatches.cs" />
+    <Compile Include="Patches\PlateautemPatches.cs" />
+    <Compile Include="Patches\BackpackAmmoPatches.cs" />
     <Compile Include="Patches\StationPatches.cs" />
     <Compile Include="Patches\TerminalPatch.cs" />
     <Compile Include="Pull\PullEngine.cs" />

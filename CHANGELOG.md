@@ -4,6 +4,168 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.23] - 2026-11-26 (test build, not released)
+
+### Changed
+
+- Rebuilt against Valheim 1.0.30 (references regenerated for the new assemblies) and verified
+  compatibility. No behaviour change here.
+- Verification detail: the API surface of every game type this mod touches is unchanged between 1.0.21
+  and 1.0.30 (`Container`, `CookingStation`, `Fireplace`, `Inventory`, `InventoryGui`, `Player`,
+  `Humanoid`, `ShieldGenerator`, `Smelter`, `Terminal`, `Turret` including the nested `Turret.AmmoType`,
+  `Attack`, `Piece`, `Recipe`, `ItemDrop`). All 23 patched targets resolve, and the reflection-only
+  targets (`Inventory.GetAmmoItem`, `Inventory.RemoveItem`, `Attack.EquipAmmoItem`, `Turret` ammo fields,
+  `Container.CheckAccess`, `InventoryGui.UpdateCraftingPanel`, `Player.m_placementStatus`) are present.
+  In `assembly_utils` the only change reaching the mod's dependencies is that `ZInput.GetButtonDown` is
+  unchanged while the dead-zone constants were reshuffled; the removed `BrotliCompressor` is unused here.
+- All 332 unit tests pass on the new references.
+
+## [1.0.22] - 2026-11-22 (test build, not released)
+
+### Changed
+
+- Backpack ammunition is verified working in play on 1.0.21: 15 lookups answered from the equipped
+  backpack with the stack never leaving it, 3 shots each spending exactly one round, and loading a bow or
+  crossbow with every inventory slot full. No behaviour change here.
+- The debug log no longer reports every ammo lookup. It runs on each attack update - every frame while
+  aiming - so the answer is logged once per ammo type, and the per-shot detail now comes from the spend
+  line, which names the item prefab and the count left: `Backpack ammo: spent 1x 'ArrowWood' from the
+  equipped backpack (91 left there).`
+
+## [1.0.21] - 2026-11-22 (test build, not released)
+
+### Changed
+
+- **Backpack ammunition is spent where it is, instead of being moved into the inventory.** 1.0.20 answered
+  a bow's ammo check by moving the whole stack out of the backpack; the round is now consumed from the
+  backpack and the stack stays put, matching how Adventure Backpacks pays for a craft (counted and
+  deducted in place). Three hooks, each from the game's own code:
+  - `Inventory.GetAmmoItem(string,string)` postfix answers the lookup with the equipped backpack's round
+    when the player's inventory has none - every ammo path resolves through it (`Attack.HaveAmmo` :752,
+    `FindAmmo` :717, `UseAmmo` :781);
+  - `Inventory.RemoveItem(ItemData,int)` prefix redirects that one removal into the backpack, because
+    vanilla's removal *refuses* an item the inventory does not contain (`Inventory` :374-377, :391) and
+    answering the lookup alone would fire arrows for free;
+  - `Attack.EquipAmmoItem` prefix keeps a backpack round out of the equipment slots - equipping an item
+    the player does not hold is a state Adventure Backpacks never creates. The shot does not need it:
+    `UseAmmo` resolves the ammunition again when it fires.
+- Side effect, deliberately allowed: loading a turret from hand now also finds a round in the backpack,
+  since `Turret.FindAmmoItem` goes through the same lookup and the same removal.
+
+Tests 333 -> 332 (`BackpackAmmoRules.ShouldSpendFromBackpack` replaces `ShouldBridge`).
+
+## [1.0.20] - 2026-11-22 (test build, not released)
+
+### Added
+
+- **Arrows and bolts in an equipped Adventure Backpacks backpack can be fired.** Vanilla resolves
+  ammunition in `Attack.HaveAmmo`/`FindAmmo`/`UseAmmo` through `Inventory.GetAmmoItem(ammoType)`, which
+  scans the player's own `m_inventory` directly; AB folds a backpack into `CountItems`/`RemoveItem` only
+  inside its crafting scope and never into `GetAmmoItem`, so a bow reported "out of arrows" while the
+  backpack held a full stack (reported from play 2026-11-22). A prefix on `Attack.HaveAmmo` now moves
+  the matching stack from the equipped backpack into the player's inventory with vanilla's own
+  `Inventory.MoveItemToThis`, then lets vanilla's check run and find it. The move removes from the
+  backpack only when the inventory accepted the stack, so a full inventory leaves it untouched (no
+  duplication, no loss), and the whole stack moves because ammunition is consumed one round at a time.
+  Guarded by `BackpackAmmoRules.ShouldBridge` (weapon names an ammo type, inventory has none, a backpack
+  is equipped), so an ordinary shot never touches the backpack. Soft dependency, resolved by name.
+- Opening AB's crafting scope cannot fix this one, unlike the Plateautem — the lookup that needs
+  widening (`Inventory.GetAmmoItem`) is not one AB patches, which is why this bridge moves items.
+
+Tests 329 -> 333.
+
+## [1.0.19] - 2026-11-22 (test build, not released)
+
+### Fixed
+
+- **Holding the interaction key now fills the Plateautem from storage**, instead of feeding one item per
+  repeat. The mod pulled exactly one unit per interaction, so the totem's own `takeAll` path (a held
+  press takes `min(roomInUnits, whatThePlayerHolds)` from the player's inventory, on a one-second
+  repeat) could never take more than that one: the log from play showed 30 separate
+  `Station: pulled up to 1x 'Wood'` events for one hold. A held press now pulls the totem's whole
+  remaining capacity — `floor((configMaximumFuel - GetTotalFuelStored()) / fuelValue)` for fuel, and
+  `floor(configMaximumStone - currentStoneStored)` in its stone mode — and a single press still pulls
+  one. If those capacity members cannot be resolved, the patch logs a warning and keeps the old
+  one-per-press behaviour rather than guessing a quantity the totem might not take.
+
+Tests 322 -> 329 (`PlateautemFuelRules.UnitsInRoom`, `UnitsToRequest`).
+
+## [1.0.18] - 2026-11-22 (test build, not released)
+
+### Fixed
+
+- **1.0.17 failed to apply the Plateautem patch at startup.** HarmonyX recognises a patch-state
+  parameter only under the exact name `__state` (its `HarmonyManipulator.StateVar`); any other `__name`
+  parameter is treated as an indexed original argument and the whole patch class is rejected with
+  `System.Exception: Parameter __openedBackpack does not contain a valid index`. The prefix and
+  finalizer now use `__state`, and the class documents why the name is not free to choose.
+
+No other change from 1.0.17: the storage feed and the Adventure Backpacks scope are as described there.
+
+## [1.0.17] - 2026-11-22 (test build, not released)
+
+### Added
+
+- **Plateautem (erkle64) is fed from nearby storage.** Its own interaction counts the selected fuel in
+  the player's inventory only and reports "no fuel" when that count is zero, so the mod now asks the
+  totem which item the current selection consumes (`PlateautemFuelRules.PrefabToSupply`: stone in its
+  `-1` stone mode, otherwise the selected entry of its "Fuel Item List") and pulls one of it from
+  chests and drawers within range of the totem, exactly as the fireplace and smelter fuel paths do.
+  Gated on the mod's `Pull fuel` setting and the prevent key; the whole patch is resolved by name at
+  runtime and skipped when Plateautem is not installed.
+- **An equipped Adventure Backpacks backpack can pay for the totem.** AB folds the backpack into
+  `Inventory.CountItems` and debits it in `Inventory.RemoveItem` only while its `CraftingContext` is
+  open, which it never opened for a third-party totem - so a backpack full of wood was invisible and
+  the player was told they had no fuel (reported from play 2026-11-22). The prefix opens AB's
+  published scope and the finalizer closes it, so the count and the debit see the same pool.
+- Verified against the installed DLLs: `Plateautem.Interact(Humanoid,bool,bool)`, `fuelItems`,
+  `currentFuelItemIndex`, `FuelItem.prefabName`, and AB 2.4.7's `CraftingContext.Enter()`/`Exit()`.
+
+### Changed
+
+- Tests 318 -> 322.
+
+## [1.0.16] - 2026-11-21 (test build, not released)
+
+### Fixed
+
+- **A newly built ballista can be loaded from nearby chests and drawers again.** A turret records its
+  ammunition type in its own ZDO, but `Turret.RPC_AddAmmo` is the only writer of that field, so a turret
+  that has never had ammunition reports an **empty** type; the mod asked storage for that empty name and
+  stopped, and vanilla then answered "not turret ammo". A turret holding no ammunition is now offered
+  every type in its own `m_allowedAmmo` list, with the recorded type first (`StationFeedRules.TurretAmmoOrder`),
+  and the first type storage can actually supply is pulled into the player's inventory for vanilla to
+  load. A turret that already holds ammunition is still offered the recorded type alone, because vanilla
+  refuses any other type in that state.
+- Confirmed from play, 2026-11-21: `Turret: ammo 0/40, room 40, ammoType='', defaultAmmo='<null>',
+  allowed=TurretBolt,TurretBoltWood,TurretBoltFlametal,TurretBoltBloodgold` on all five attempts against a
+  drawer of flametal bolts.
+
+### Changed
+
+- With `Debug` enabled, each turret interaction logs the ammunition count, room, recorded type, default
+  ammo prefab and allowed list, then the reason nothing was pulled when nothing was pulled.
+- Still **no change to the chest-sync work**: the known limitation documented in 1.0.15 is unchanged.
+
+## [1.0.15] - 2026-11-07 (diagnostic build, not released)
+
+### Changed
+
+- **No behaviour change versus 1.0.11.** The chest-sync attempts in the unreleased 1.0.12-1.0.14 test
+  builds are removed: they were written on an inference about how a container's contents reach a
+  non-owning client, and the two-player test showed the inference was wrong (a count of 1 became 0 when
+  another player opened the chest). None of them was ever published, and none is preserved here.
+- **With `Debug` enabled, chest state is now recorded** instead of acted on. Every change to a chest's
+  *local* contents logs what the copy and the ZDO say at that moment —
+  `Chest 'piece_chest(Clone)' contents changed: items 78 -> 0, revision 41, zdoItems 412 bytes, owner
+  90296884207702042, weAreOwner False.` — and each in-range chest is described at most every ten seconds
+  while a crafting panel is open: `Chest 'piece_chest(Clone)': items 0, revision 41, zdoItems 0 bytes,
+  owner …, weAreOwner False.` The observation performs no request, takes no ownership and writes no
+  inventory; with `Debug` off the mod behaves exactly as 1.0.11 does.
+- **Known limitation, unchanged:** a chest another player fills can still read as empty here until this
+  client is sent that chest's contents (opening it does that). This build exists to establish, from a
+  log, which client's copy is wrong before anything is changed again.
+
 ## [1.0.11] - 2026-11-07
 
 ### Added

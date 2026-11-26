@@ -33,6 +33,30 @@ namespace CraftFromDrawersAndChests
         /// </summary>
         public static FeatureFlags Flags;
 
+        // -------------------------------------------------------------------------------------------
+        // FORCED-DEBUG LOG-CAPTURE BUILD (temporary; compiled in ONLY when FORCED_DEBUG is defined).
+        //
+        // Why it exists: every entry is IsAdminOnly, so a non-admin client cannot edit "Debug" at all,
+        // and Jötunn pushes the server's value into the entry and then raises OnConfigurationSynchronized
+        // - so a player can end up unable to turn debug logging on no matter what their local file says.
+        // With this true, debug logging cannot be switched off on any machine running the build, which is
+        // exactly what a two-client log-capture session needs.
+        //
+        // ReadInto is the single writer of FeatureFlags, so forcing it here also covers every later
+        // refresh (setting change, Jotunn server push).
+        //
+        // A normal build never defines FORCED_DEBUG, so this is dead (and folded away) in every
+        // released artifact. To make one: set the env var before building,
+        //     $env:DefineConstants = 'TRACE;FORCED_DEBUG'
+        //     .\tools\Build.ps1 -Configuration Release
+        // and clear it afterwards. No source revert is needed.
+        // -------------------------------------------------------------------------------------------
+#if FORCED_DEBUG
+        private static readonly bool ForceDebugForDiagnostics = true;
+#else
+        private static readonly bool ForceDebugForDiagnostics = false;
+#endif
+
         // One entry per key-name constant in ConfigModel (the ZDO key is a constant, not a
         // setting, and so is deliberately not bound). Kept private: consumers read Flags or the
         // flash-colour accessors below.
@@ -196,7 +220,7 @@ namespace CraftFromDrawersAndChests
         public static void ReadInto(FeatureFlags flags)
         {
             flags.ModEnabled = modEnabled.Value;
-            flags.IsDebug = isDebug.Value;
+            flags.IsDebug = isDebug.Value || ForceDebugForDiagnostics;
 
             flags.MaxRange = maxRange.Value;
 

@@ -52,6 +52,15 @@ namespace CraftFromDrawersAndChests
             Instance = this;
             Harmony = new Harmony(ModInfo.ModGuid);
 
+#if FORCED_DEBUG
+            // FORCED-DEBUG LOG-CAPTURE BUILD (temporary): see PluginConfig.ForceDebugForDiagnostics.
+            // Logged first so every log from this session is self-identifying, and at Warning level so
+            // it cannot be filtered out by the user's configured log level.
+            Log.LogWarning("CraftFromDrawersAndChests " + ModInfo.Version +
+                           ": FORCED-DEBUG TEST BUILD - debug logging is forced ON and cannot be disabled. " +
+                           "This build exists to capture logs and must never be released.");
+#endif
+
             // Configuration first: PluginConfig.ReadInto is the single writer of the shared
             // FeatureFlags snapshot, and it must run before PatchAll so every patch observes a
             // fully populated snapshot rather than the all-false values a non-defaulted DTO

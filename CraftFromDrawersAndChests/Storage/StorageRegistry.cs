@@ -1,5 +1,7 @@
 using System.Collections.Generic;
+using BepInEx.Logging;
 using CraftFromDrawersAndChests.Logic;
+using UnityEngine;
 
 namespace CraftFromDrawersAndChests.Storage
 {
@@ -24,6 +26,20 @@ namespace CraftFromDrawersAndChests.Storage
     /// </summary>
     public static class StorageRegistry
     {
+        // Fully qualified: UnityEngine.Logger exists too, so the bare name is ambiguous.
+        private static readonly ManualLogSource Log = BepInEx.Logging.Logger.CreateLogSource(ModInfo.ModName);
+
+        /// <summary>
+        /// When each chest was last observed, keyed by its ZDO id, and when an observation pass last ran.
+        /// The cadence is <see cref="StorageRefreshRules"/>'s; this is only the bookkeeping. Both are used
+        /// exclusively by <c>Debug</c> logging — nothing here asks the network for anything.
+        /// </summary>
+        private static readonly Dictionary<ZDOID, float> lastObservedAt = new Dictionary<ZDOID, float>();
+        private static float lastPassAt;
+
+        /// <summary>The instance ids of the chests whose change hook is installed; Debug only.</summary>
+        private static readonly HashSet<int> hookedChests = new HashSet<int>();
+
         /// <summary>
         /// A storage that holds what a requirement needs but is <b>locked</b> against this player, with
         /// the reason. <see cref="StorageRegistry.CollectBlocked" /> produces these for the crafting
@@ -143,6 +159,9 @@ namespace CraftFromDrawersAndChests.Storage
         public static void Clear()
         {
             ContainerTrackingPatches.Clear();
+            lastObservedAt.Clear();
+            hookedChests.Clear();
+            lastPassAt = 0f;
         }
 
         private static void CollectChests(
@@ -150,6 +169,15 @@ namespace CraftFromDrawersAndChests.Storage
             bool includeSwitchedOff, List<BlockedStorage> blocked)
         {
             IReadOnlyList<Container> tracked = ContainerTrackingPatches.Tracked;
+
+            // One observation pass at most every couple of seconds, however many callers collect this
+            // frame, and only with Debug on. It observes; it never changes what this mod does.
+            float now = Time.time;
+            bool observe = flags != null && flags.IsDebug &&
+                           StorageRefreshRules.IsDue(now, lastPassAt, StorageRefreshRules.PassIntervalSeconds);
+            if (observe)
+                lastPassAt = now;
+
             for (int i = 0; i < tracked.Count; i++)
             {
                 Container container = tracked[i];
@@ -158,6 +186,12 @@ namespace CraftFromDrawersAndChests.Storage
                 // its OnDestroyed postfix runs.
                 if (container == null)
                     continue;
+
+                if (observe)
+                {
+                    HookInventoryChanges(container);
+                    ObserveChest(container, now);
+                }
 
                 var source = new VanillaChestSource(container);
                 if (!source.IsValid)
@@ -227,6 +261,134 @@ namespace CraftFromDrawersAndChests.Storage
                     blocked.Add(new BlockedStorage(source, reason));
                 }
             }
+        }
+
+        /// <summary>
+        /// Debug-only observation of one chest: a throttled snapshot of what this client's copy holds
+        /// and what the chest's ZDO claims. <b>Observes only</b> — no request, no ownership change, no
+        /// inventory write — so the build behaves exactly as it does with <c>Debug</c> off.
+        /// <para>
+        /// A chest's contents are a local <c>Inventory</c> loaded from its ZDO, and only the ZDO's owner
+        /// writes the chest back, so "player B counts 0 for a chest player A filled" can mean three
+        /// different things: B never received the data, B's copy was replaced by a stale one, or B's copy
+        /// is right and the ZDO is wrong. The snapshot separates them — local item count, local ZDO
+        /// revision, the size of the ZDO's serialized <c>items</c> var, and the owner id — so the cause is
+        /// read from a log instead of inferred.
+        /// </para>
+        /// </summary>
+        private static void ObserveChest(Container container, float now)
+        {
+            ZNetView view = VanillaChestSource.ViewOf(container);
+            if (view == null || !view.IsValid())
+                return;
+
+            ZDO zdo = view.GetZDO();
+            if (zdo == null)
+                return;
+
+            float last = lastObservedAt.TryGetValue(zdo.m_uid, out float previous) ? previous : 0f;
+            if (!StorageRefreshRules.IsDue(now, last, StorageRefreshRules.ChestIntervalSeconds))
+                return;
+
+            lastObservedAt[zdo.m_uid] = now;
+
+            long owner = zdo.GetOwner();
+            Log.LogInfo(
+                "Chest '" + container.name + "': items " + ItemCount(container) +
+                ", revision " + zdo.DataRevision + ", zdoItems " + ItemsByteCount(zdo) + " bytes, owner " +
+                owner + ", weAreOwner " + (owner == ZNet.GetUID()) + ".");
+
+            PruneObservationBookkeeping(now);
+        }
+
+        /// <summary>
+        /// Installs, once per chest, a hook that logs every change to the chest's <b>local</b> contents
+        /// together with the ZDO state at that moment. This exists because "the count dropped" cannot be
+        /// attributed from the outside: a reload can come from the game's one-second timer, from a ZDO
+        /// pushed by another peer, or from this client's own interaction. Logging the count, revision,
+        /// <c>s_items</c> size and owner at the moment it changes names the culprit in a single test run.
+        /// Debug only; with Debug off no handler is installed.
+        /// </summary>
+        private static void HookInventoryChanges(Container container)
+        {
+            if (!hookedChests.Add(container.GetInstanceID()))
+                return;
+
+            Inventory inventory = container.GetInventory();
+            if (inventory == null)
+                return;
+
+            string name = container.name;
+            var state = new ChestChangeState { LastCount = inventory.NrOfItems() };
+
+            inventory.m_onChanged += () =>
+            {
+                if (container == null)
+                    return;
+
+                int count = ItemCount(container);
+                if (count == state.LastCount)
+                    return;
+
+                ZNetView view = VanillaChestSource.ViewOf(container);
+                ZDO zdo = view != null ? view.GetZDO() : null;
+                long owner = zdo != null ? zdo.GetOwner() : 0L;
+
+                Log.LogInfo(
+                    "Chest '" + name + "' contents changed: items " + state.LastCount + " -> " + count +
+                    ", revision " + (zdo != null ? zdo.DataRevision : 0u) +
+                    ", zdoItems " + ItemsByteCount(zdo) + " bytes, owner " + owner +
+                    ", weAreOwner " + (owner == ZNet.GetUID()) + ".");
+
+                state.LastCount = count;
+            };
+        }
+
+        /// <summary>The mutable box the change hook keeps its last observed item count in.</summary>
+        private sealed class ChestChangeState
+        {
+            public int LastCount;
+        }
+
+        /// <summary>The container's local item count, or -1 when it has no inventory.</summary>
+        private static int ItemCount(Container container)
+        {
+            Inventory inventory = container != null ? container.GetInventory() : null;
+            return inventory != null ? inventory.NrOfItems() : -1;
+        }
+
+        /// <summary>
+        /// How many bytes the chest's serialized inventory occupies in the <b>local</b> ZDO, or -1 when
+        /// there is no ZDO. Zero means the ZDO claims the chest is empty — which is the interesting case
+        /// when the client's inventory says otherwise.
+        /// </summary>
+        private static int ItemsByteCount(ZDO zdo)
+        {
+            if (zdo == null)
+                return -1;
+
+            byte[] items = zdo.GetByteArray(ZDOVars.s_items, (byte[])null);
+            return items != null ? items.Length : 0;
+        }
+
+        /// <summary>
+        /// Drops throttle entries old enough that they can no longer be due, so the bookkeeping cannot
+        /// grow with every chest a long session has ever seen.
+        /// </summary>
+        private static void PruneObservationBookkeeping(float now)
+        {
+            if (lastObservedAt.Count < 256)
+                return;
+
+            var stale = new List<ZDOID>();
+            foreach (KeyValuePair<ZDOID, float> entry in lastObservedAt)
+            {
+                if (now - entry.Value >= StorageRefreshRules.ChestIntervalSeconds)
+                    stale.Add(entry.Key);
+            }
+
+            for (int i = 0; i < stale.Count; i++)
+                lastObservedAt.Remove(stale[i]);
         }
     }
 }

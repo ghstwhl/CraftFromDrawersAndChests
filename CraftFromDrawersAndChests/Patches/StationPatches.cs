@@ -949,24 +949,66 @@ namespace CraftFromDrawersAndChests.Patches
             // A turret with no room for ammunition is never supplied: vanilla's own full/other-ammo
             // branches decide what to report, and nothing is taken from storage for an item that could
             // not be loaded.
-            if (StationFeedRules.RemainingCapacity(__instance.m_maxAmmo, __instance.GetAmmo()) <= 0)
-                return true;
+            int ammoLoaded = __instance.GetAmmo();
+            int ammoRoom = StationFeedRules.RemainingCapacity(__instance.m_maxAmmo, ammoLoaded);
 
             // GetAmmoType() is public in the shipping assembly and reads the turret's own ZDO
             // "ammoType" (default m_ammoType), so it is the prefab name to look up in both the empty
             // and loaded cases — exactly the prefab CFC resolves at its line 1145.
             string ammoType = __instance.GetAmmoType();
-            if (string.IsNullOrEmpty(ammoType))
-                return true;
+            List<string> allowedAmmo = AllowedAmmoNames(__instance);
 
-            ItemDrop ammo = AmmoItem(ammoType);
-            if (ammo == null)
+            // TEMPORARY DIAGNOSTIC (bug report 2026-11-21: a fresh ballista beside a drawer of flametal
+            // bolts never loads from it). Every value the decision depends on, once per interaction, so
+            // a single retest identifies the gate that stopped the pull.
+            Debug(flags, "Turret: ammo " + ammoLoaded + "/" + __instance.m_maxAmmo +
+                ", room " + ammoRoom +
+                ", ammoType='" + ammoType + "'" +
+                ", defaultAmmo='" + (__instance.m_defaultAmmo == null ? "<null>" : __instance.m_defaultAmmo.name) + "'" +
+                ", allowed=" + string.Join(",", allowedAmmo));
+
+            if (ammoRoom <= 0)
             {
-                Debug(flags, "Turret: no item prefab for ammunition type '" + ammoType + "'; nothing pulled.");
+                Debug(flags, "Turret: full (" + ammoLoaded + "/" + __instance.m_maxAmmo + "); nothing pulled.");
                 return true;
             }
 
-            PullFromStorage(player, __instance.transform.position, ammoType, ammo, flags, 1, false);
+            if (string.IsNullOrEmpty(ammoType))
+            {
+                Debug(flags, "Turret: no ammunition type recorded on this turret yet; using its allowed list.");
+            }
+
+            // A turret that has never been loaded records no type at all (s_ammoType is written by
+            // RPC_AddAmmo only) and accepts any of m_allowedAmmo, so the candidates are the recorded
+            // type first and then the allowed list - see StationFeedRules.TurretAmmoOrder.
+            IReadOnlyList<string> ammoOrder = StationFeedRules.TurretAmmoOrder(ammoType, allowedAmmo, ammoLoaded > 0);
+
+            var candidates = new List<ItemDrop>(ammoOrder.Count);
+            for (int i = 0; i < ammoOrder.Count; i++)
+            {
+                ItemDrop candidate = AmmoItem(ammoOrder[i]);
+                if (candidate != null)
+                    candidates.Add(candidate);
+            }
+
+            if (candidates.Count == 0)
+            {
+                Debug(flags, "Turret: no ammunition prefab resolves for '" + string.Join(",", ammoOrder) +
+                    "'; nothing pulled.");
+                return true;
+            }
+
+            // The same inventory-aware walk the smelter's ores use: stop at the first type the player's
+            // inventory ends up holding, never at the first pull that merely returned true.
+            string pulledPrefab = PullFirstInputs(
+                player, player.GetInventory(), __instance.transform.position, candidates, string.Empty, flags, 1, false);
+
+            if (pulledPrefab == null)
+            {
+                Debug(flags, "Turret: nothing pulled; storage in range holds none of '" +
+                    string.Join(",", ammoOrder) + "'.");
+            }
+
             return true;
         }
 
@@ -1229,7 +1271,12 @@ namespace CraftFromDrawersAndChests.Patches
         /// pull it has always been, so releasing the key behaves exactly as before.
         /// </para>
         /// </summary>
-        private static bool PullFromStorage(
+        /// <summary>
+        /// Pulls <paramref name="amount"/> of one item from storage into the player's inventory and says
+        /// whether the destination now covers it. Internal rather than private because the Plateautem
+        /// patch (another station fed by the same rule) reuses it.
+        /// </summary>
+        internal static bool PullFromStorage(
             Player player, Vector3 origin, string prefab, ItemDrop item, FeatureFlags flags, int amount,
             bool fillUpTo)
         {
@@ -1583,6 +1630,28 @@ namespace CraftFromDrawersAndChests.Patches
 
             GameObject prefab = ZNetScene.instance.GetPrefab(ammoType);
             return prefab != null ? prefab.GetComponent<ItemDrop>() : null;
+        }
+
+        /// <summary>
+        /// The prefab names of every ammunition type this turret accepts, in the turret's own order.
+        /// This is the list vanilla's own <c>IsItemAllowed</c> walks, and the list a turret with no
+        /// recorded <c>s_ammoType</c> is supplied from (<see cref="StationFeedRules.TurretAmmoOrder"/>).
+        /// </summary>
+        private static List<string> AllowedAmmoNames(Turret turret)
+        {
+            var names = new List<string>();
+            if (turret.m_allowedAmmo == null)
+                return names;
+
+            for (int i = 0; i < turret.m_allowedAmmo.Count; i++)
+            {
+                // `var`: the entry type is Turret's nested AmmoType, a struct that is not public in the
+                // shipping assembly, so it must never be named here (repo visibility rule).
+                var entry = turret.m_allowedAmmo[i];
+                if (entry.m_ammo != null)
+                    names.Add(entry.m_ammo.name);
+            }
+            return names;
         }
 
         /// <summary>A world position as the pure <see cref="Vec3"/> the range maths uses.</summary>
