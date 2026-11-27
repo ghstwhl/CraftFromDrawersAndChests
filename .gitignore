@@ -12,6 +12,7 @@ tools/.cache/
 
 # Local Valheim server and client logs captured while testing
 serverlogs/
+logs/
 
 # Superpowers workspace: the installer's .superpowers junction plus SDD scratch
 # (a Windows junction to a clone of the public Superpowers plugin -- an embedded git repo,

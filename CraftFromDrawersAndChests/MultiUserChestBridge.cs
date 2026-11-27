@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
 using BepInEx.Logging;
+using CraftFromDrawersAndChests.Chest;
 using CraftFromDrawersAndChests.Logic;
-using MultiUserChest;
 
 namespace CraftFromDrawersAndChests
 {

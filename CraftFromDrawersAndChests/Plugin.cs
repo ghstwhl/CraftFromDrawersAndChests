@@ -1,6 +1,7 @@
 using System;
 using BepInEx;
 using BepInEx.Logging;
+using CraftFromDrawersAndChests.Chest;
 using HarmonyLib;
 using Jotunn.Utils;
 
@@ -13,11 +14,23 @@ namespace CraftFromDrawersAndChests
     [BepInPlugin(ModInfo.ModGuid, ModInfo.ModName, ModInfo.Version)]
     // Hard dependency: Jötunn also provides the network-compatibility enforcement below.
     [BepInDependency(Jotunn.Main.ModGuid)]
-    // Hard dependency: MultiUserChest is the only supported chest-removal path. Without it the
-    // only working chest implementation is the direct inventory mutation this design forbids.
-    [BepInDependency("com.maxsch.valheim.MultiUserChest")]
     // Soft dependency: the mod still runs chest-only when Item Drawers is not installed.
     [BepInDependency("kg.ItemDrawers", BepInDependency.DependencyFlags.SoftDependency)]
+    // MultiUserChest's chest-concurrency layer now lives INSIDE this assembly (namespace
+    // CraftFromDrawersAndChests.Chest, taken from MultiUserChest 0.6.2 under the MIT licence). Both
+    // patch Inventory.AddItem/RemoveItem and Container.RPC_RequestOpen and both register the same
+    // MUC_* RPC routes, so loading together would double-patch and double-send. Declared as an
+    // INCOMPATIBILITY rather than a dependency: BepInEx removes a plugin whose incompatibility is
+    // installed from the load list entirely (Chainloader: "Could not load [...] because it is
+    // incompatible with: ..."), so there is no window in which both are live. The player must
+    // remove MultiUserChest.
+    [BepInIncompatibility(ChestPatches.UpstreamGuid)]
+    // Carried over verbatim from the absorbed MultiUserChest: its inventory interception assumes
+    // these quick-move mods are absent. They are a subset of the conflicts this mod already had -
+    // they apply exactly as they did when MultiUserChest was a separate plugin.
+    [BepInIncompatibility("aedenthorn.QuickStore")]
+    [BepInIncompatibility("aedenthorn.SimpleSort")]
+    [BepInIncompatibility("org.bepinex.plugins.valheim.quick_stack")]
     // The two mods this one replaces; both pull from storage, so coexisting would desync.
     [BepInIncompatibility("aedenthorn.CraftFromContainers")]
     [BepInIncompatibility("Azumatt.AzuCraftyBoxes")]
@@ -98,6 +111,13 @@ namespace CraftFromDrawersAndChests
                              "are still applied, but every config-gated feature is inert). Cause: " + e);
             }
 
+            // The absorbed chest layer logs through its own static facade, which needs this plugin's
+            // logger or every line falls back to UnityEngine.Debug and never reaches LogOutput.log.
+            // Its verbose diagnostics follow this mod's own Debug setting (upstream gated them on a
+            // compile-time DEBUG symbol instead), read live so toggling the setting applies at once.
+            // Before PatchAll, so anything the absorbed patches log while being applied lands here.
+            ChestPatches.InitialiseLogging(Log, () => PluginConfig.Flags != null && PluginConfig.Flags.IsDebug);
+
             // The assembly is passed EXPLICITLY. Harmony's no-argument PatchAll() infers its target
             // from a stack frame - new StackTrace().GetFrame(1).GetMethod().ReflectedType.Assembly -
             // and if that inference lands anywhere other than this assembly, it patches
@@ -105,6 +125,11 @@ namespace CraftFromDrawersAndChests
             // and no log line. That is exactly what 0.1.1 did. Naming the assembly removes the
             // inference entirely, so this can no longer depend on stack-frame resolution.
             Harmony.PatchAll(typeof(Plugin).Assembly);
+
+            // The absorbed layer applied its item-drawers support separately (upstream did the same):
+            // ItemDrawerCompat's [HarmonyPatch] attributes sit on its methods, not on the type, so the
+            // assembly scan above skips it by design.
+            ChestPatches.ApplyCompatPatches(Harmony);
 
             LogPatchReport();
         }

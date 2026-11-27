@@ -59,9 +59,15 @@ of which the game or those mods do on their own.
 
 - **BepInEx 5.4.2351** (the current BepInExPack_Valheim). `5.4.2350` works too: both packs ship the
   same BepInEx 5.4.23.5 core and HarmonyX 2.9.0.
-- **Jötunn 2.30.2** — required.
-- **MultiUserChest 0.6.2** — required. All chest reads and removals go through it so two
-  players can use the same chest at once without desync.
+- **Jötunn 2.30.3** — required.
+- **MultiUserChest — must NOT be installed.** MultiUserChest's chest-sharing code is now **built into this
+  mod** (`Chest/`, taken from MultiUserChest 0.6.2 under the MIT licence), so the two would patch the same
+  methods and register the same network routes. This mod declares it an incompatible dependency, which means
+  BepInEx refuses to load this mod while MultiUserChest is present. **Remove MultiUserChest before
+  upgrading.** It is built in on purpose: the code is in-tree so its decisions — who owns a chest, which
+  branch answered an open, what a pull actually did — can be logged with this mod's own **Debug** switch and
+  fixed here, instead of being observable only through another plugin's compile-time debug build. See
+  *MultiUserChest is now part of this mod* below.
 - **KG Item Drawers 1.4.0** — optional. With it absent the mod runs chest-only; with it
   present, drawers are pulled from as well.
 - **Adventure Backpacks 2.x** (tested with 2.4.7) — optional. With it installed, materials in your equipped
@@ -74,16 +80,39 @@ of which the game or those mods do on their own.
   Plateautem 0.4.3 and Adventure Backpacks 2.4.7; if either mod changes shape the bridge logs a warning
   and switches itself off rather than guessing.
 
+### Who owns a chest, and what everyone else can do with it
+
+A chest belongs to the player who claimed it — the first one to open it while it was unclaimed — and it stays
+theirs when someone else opens it. **Every** player can craft and build from it: a cost that has to be taken
+from a chest another player owns is fetched over the network first and the craft completes the moment those
+items arrive (a fraction of a second later). Nothing is crafted until the materials are actually in hand.
+
+### MultiUserChest is now part of this mod
+
+MultiUserChest's chest-sharing layer is compiled into `CraftFromDrawersAndChests.dll` (absorbed from
+MultiUserChest 0.6.2, MIT — see [LICENSE-MULTIUSERCHEST.txt](LICENSE-MULTIUSERCHEST.txt)). **Uninstall
+MultiUserChest**; this mod declares it an incompatible dependency, so BepInEx will refuse to load this mod
+while it is present.
+
+It was rolled in for debugging: a chest problem used to be a black box behind another plugin whose only
+diagnostic switch was a compile-time `DEBUG` symbol, so a shipped build could say nothing about what it
+decided. Now every chest decision is this mod's own code and follows its **Debug** setting at run time —
+who owns a container and whether an open was granted or handed over, which branch answered it, what a pull
+took or routed, and what it waited for.
+
 ### Remove these before installing
 
 This mod does what they do, and replacements must not overlap. **Uninstall them first** or
 you will get conflicting patches and double pulls:
 
+- **MultiUserChest** — its chest-sharing code now ships inside this mod (see above). Two copies would patch
+  the same methods and register the same `MUC_*` network routes, so this mod declares it an incompatible
+  dependency and BepInEx refuses to load this mod while it is installed.
 - **CraftFromContainers**
 - **AzuCraftyBoxes**
 
-This mod declares both as incompatible dependencies, so BepInEx will refuse to load while
-either is installed. Remove them from `BepInEx\plugins` (or your mod-manager profile) and
+This mod declares all three as incompatible dependencies, so BepInEx will refuse to load while
+any of them is installed. Remove them from `BepInEx\plugins` (or your mod-manager profile) and
 restart before installing this mod.
 
 ## Installation
@@ -94,8 +123,8 @@ Install it with your mod manager, or download the zip and extract it into `BepIn
 **By hand:**
 
 1. Install **BepInExPack_Valheim** (BepInEx 5.4.2351) into your Valheim folder.
-2. Drop `CraftFromDrawersAndChests.dll` into `BepInEx\plugins`.
-3. Install **MultiUserChest** and, optionally, **KG Item Drawers**.
+2. Remove **MultiUserChest** if you have it, then drop `CraftFromDrawersAndChests.dll` into
+   `BepInEx\plugins`. Optionally install **KG Item Drawers**.
 4. Do the same on the server. Restart the server and each client.
 
 ## Configuration
@@ -160,8 +189,9 @@ A report that can be acted on usually carries:
 - that log, or at least the part of it around the problem — it is where any diagnosis starts;
 - whether you are playing alone or on a server, and if on a server whether you are the host or a
   client;
-- the versions of the rest of the chain: **MultiUserChest** (required), and **KG Item Drawers** and
-  **Adventure Backpacks** (both optional).
+- the versions of the rest of the chain: **KG Item Drawers** and **Adventure Backpacks** (both
+  optional), and confirmation that **MultiUserChest** is **not** installed (since 2.0.0 its layer is
+  part of this mod, and BepInEx will refuse to load this mod while it is present).
 
 A fault in another mod belongs on that mod's own tracker rather than here — Item Drawers' hotkeys and
 hover text, for instance, are not ours to change.
@@ -175,7 +205,10 @@ assemblies it needs are documented in [REFERENCES.md](REFERENCES.md).
 
 - **CraftFromContainers** (aedenthorn) — the behavioural baseline this mod ports.
 - **AzuCraftyBoxes** (Azumatt) — reference for the storage abstraction and the toggle.
-- **MultiUserChest** (MSchmoecker) — the chest concurrency protocol this mod builds on.
+- **MultiUserChest** (MSchmoecker, MIT) — the chest concurrency protocol this mod builds on. Since
+  2.0.0 its source is compiled into this mod (`Chest/`) rather than required as a separate plugin, so
+  that its behaviour can be logged and fixed here. Copyright © 2022 Maximilian Schmöcker; the MIT
+  notice ships as [LICENSE-MULTIUSERCHEST.txt](LICENSE-MULTIUSERCHEST.txt).
 - **Jötunn** — the mod framework and server-synced configuration.
 
 ## Licence

@@ -909,10 +909,15 @@ namespace CraftFromDrawersAndChests.Pull
         /// <summary>
         /// One <see cref="StorageStock"/> per (source, requested item name) pair, with the source's
         /// index as its opaque <see cref="StorageStock.SourceId"/> so <see cref="Execute"/> can map a
-        /// line back through the same list. A chest another player owns is skipped here rather than
-        /// planned against (the design's second hard rule): asking it would route the removal, whose
-        /// outcome is not knowable synchronously, so it must be declined <b>before</b> a plan is built.
-        /// A destroyed or invalid source is skipped too.
+        /// line back through the same list. A destroyed or invalid source is skipped.
+        /// <para>
+        /// <b>A chest another player owns is planned against since 2.2.0.</b> It used to be skipped here,
+        /// which made such a chest invisible to the plan — and therefore to the crafting panel, so only the
+        /// owner could craft from it. Removing it is what makes "both players craft from the same chest"
+        /// possible; the asynchronous delivery is handled by the callers, which hold the craft until the
+        /// items land (<see cref="Logic.CraftPaymentRules"/>) because a routed removal returns before the
+        /// items reach the destination.
+        /// </para>
         /// </summary>
         private static IReadOnlyList<StorageStock> BuildStocks(
             IReadOnlyList<IStorageSource> sources, IReadOnlyList<PullRequest> requests, Vec3 origin)
@@ -931,9 +936,6 @@ namespace CraftFromDrawersAndChests.Pull
                 if (source == null || !source.IsValid)
                     continue;
 
-                if (!CanServeSynchronously(source))
-                    continue;
-
                 float distance = source.Position.DistanceTo(origin);
                 string id = SourceId(i);
                 for (int n = 0; n < names.Length; n++)
@@ -944,6 +946,61 @@ namespace CraftFromDrawersAndChests.Pull
                 }
             }
             return stocks;
+        }
+
+        /// <summary>
+        /// The distinct item names of a plan's lines that must be served by a <b>routed</b> removal, in plan
+        /// order. Used to name what a held craft is waiting for: <see cref="PullPlanResult.MissingItemNames"/>
+        /// lists only what <i>no</i> storage can supply, so it is empty for exactly the lines that are on their
+        /// way.
+        /// </summary>
+        public static IReadOnlyList<string> NamesNeedingFetch(PullPlanResult plan, IReadOnlyList<IStorageSource> sources)
+        {
+            var names = new List<string>();
+            if (plan == null || plan.Lines == null || sources == null || sources.Count == 0)
+                return names;
+
+            var byId = new Dictionary<string, IStorageSource>(StringComparer.Ordinal);
+            for (int i = 0; i < sources.Count; i++)
+                byId[SourceId(i)] = sources[i];
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < plan.Lines.Count; i++)
+            {
+                IStorageSource source;
+                if (!byId.TryGetValue(plan.Lines[i].SourceId, out source) || CanServeSynchronously(source))
+                    continue;
+
+                string name = plan.Lines[i].ItemName;
+                if (!string.IsNullOrEmpty(name) && seen.Add(name))
+                    names.Add(name);
+            }
+            return names;
+        }
+
+        /// <summary>
+        /// How many of a plan's lines must be served by a storage whose removal is <b>routed</b> — i.e. by a
+        /// chest another player owns, whose items are delivered after the call returns. A caller that is
+        /// about to create something and then consume the materials uses this to decide whether it may
+        /// proceed now or has to hold until the delivery lands.
+        /// </summary>
+        public static int CountLinesNeedingFetch(PullPlanResult plan, IReadOnlyList<IStorageSource> sources)
+        {
+            if (plan == null || plan.Lines == null || sources == null || sources.Count == 0)
+                return 0;
+
+            var byId = new Dictionary<string, IStorageSource>(StringComparer.Ordinal);
+            for (int i = 0; i < sources.Count; i++)
+                byId[SourceId(i)] = sources[i];
+
+            int count = 0;
+            for (int i = 0; i < plan.Lines.Count; i++)
+            {
+                IStorageSource source;
+                if (byId.TryGetValue(plan.Lines[i].SourceId, out source) && !CanServeSynchronously(source))
+                    count++;
+            }
+            return count;
         }
 
         /// <summary>
