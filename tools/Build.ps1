@@ -210,7 +210,10 @@ function New-DocStage {
     $stageProj = Join-Path $stageRoot 'CraftFromDrawersAndChests'
     New-Item -ItemType Directory -Force -Path $stageProj | Out-Null
 
-    foreach ($name in @('LICENSE.md', 'manifest.json', 'CHANGELOG.md', 'README.md', 'icon.png')) {
+    # LICENSE-MULTIUSERCHEST.txt travels with the package: this mod ships absorbed MIT code (the chest
+    # concurrency layer), and the MIT terms require the copyright notice and permission text to be
+    # distributed with it.
+    foreach ($name in @('LICENSE.md', 'LICENSE-MULTIUSERCHEST.txt', 'manifest.json', 'CHANGELOG.md', 'README.md', 'icon.png')) {
         $src = Join-Path $RepoRoot $name
         if (Test-Path $src) { Copy-Item $src $stageProj }
     }

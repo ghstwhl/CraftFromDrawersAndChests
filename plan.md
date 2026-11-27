@@ -308,3 +308,111 @@ without a MultiUserChest change", rather than another request-shaped guess.
       `InventoryGui.UpdateCraftingPanel`, `Player.m_placementStatus`, `Player.HaveRequirementItems`).
 - [x] 332/332 tests pass; Release 1.0.24 packaged.
 - [ ] Open, unchanged: the MultiUserChest chest-locking issue shipped as a known issue in 1.0.23.
+
+# In progress: absorb MultiUserChest (branch `MultiUserChestMerge`, 2026-11-27)
+
+Why: chest locking can leave a container open without handing over ownership. The mechanism is visible in
+MultiUserChest's source, but the *state* at the moment of failure is not - and its only diagnostic switch is
+a compile-time `#if DEBUG` that its own changelog calls slow. Owning the code makes the failure observable
+from our runtime `Debug` flag, which is the whole point of this branch.
+
+Source: `..\No-Chest-Block-Original` (MID/MIT-licensed MultiUserChest 0.6.2, GUID
+`com.maxsch.valheim.MultiUserChest`, namespace `MultiUserChest`).
+
+## Rulings taken (owner, 2026-11-27)
+
+1. **Conflict policy: hard incompatibility.** `[BepInIncompatibility("com.maxsch.valheim.MultiUserChest")]`
+   replaces the hard `[BepInDependency]`. Verified in BepInEx 5.4 source (`Chainloader.cs`, the
+   `pluginsByGUID.Values.ToList()` loop): a plugin whose incompatibility is present is **removed from the
+   load list** and logged as `Could not load [...] because it is incompatible with: ...` - it does not load
+   and cannot double-patch. The player must uninstall MultiUserChest.
+2. **Scope: absorb everything, verbatim**, including `ItemDrawerCompat`, `OdinShip`, the EAQS wrapper and
+   the disabled QuickStack transpiler.
+3. **Layout: `Chest/` with namespace `CraftFromDrawersAndChests.Chest`** (`…Chest.Patches` for the patch
+   folder). Network names stay verbatim: the ten `MUC_*` RPC routes and the `MUC_Ignore` ZDO flag are wire
+   and save data, not cosmetics.
+4. Version: **2.0.0**, because upgrading now requires deleting another plugin. Every peer and the server
+   must move together (the version is already `VersionStrictness.Patch`).
+
+## Phases
+
+- [x] Verified `BepInIncompatibility` semantics against the BepInEx source (quote above), not from memory.
+- [x] Vendor `Chest/**` with the namespace rewrite; keep file names and structure for diffability.
+- [x] `Chest/ChestPatches.cs` replaces MUC's `Plugin : BaseUnityPlugin` (its `ModGuid`/`ModName`/
+      `ModVersion`/`PatchAll`/`ApplyModPatches`, minus the BepIn attributes) and is driven from our `Awake`.
+- [x] `Log.Init(Logger)` must run before any absorbed code logs, or MUC's `Log` silently falls back to
+      `UnityEngine.Debug`.
+- [x] Remove `<Reference Include="MultiUserChest">`, its MSB3274 workaround target, and
+      `.references\Mods\MultiUserChest.dll` from the compile path; list all 30 `Chest\**` files in the
+      legacy csproj (it does not glob).
+- [x] `MultiUserChestBridge`/`VanillaChestSource` switch to `CraftFromDrawersAndChests.Chest`.
+- [x] Compile on net462 (`LangVersion 10` covers MUC's one C# 7.1 `default` literal; no 4.7.2-only API found).
+- [x] Diagnostics: route MUC's `PrintDebug`/timer output through our runtime `Debug` flag instead of
+      `#if DEBUG`, and log the open-hand-over decision - `IsContainerInUse`, `HasOwner`, `IsOwner`,
+      `m_inUse`, the chosen branch - once per open, not per frame.
+- [x] Verify the artifact: `Test-PatchTargets.ps1` (note MUC adds **4 transpilers**, which the script cannot
+      judge), `strings.ps1` for the `MUC_*` routes and `MUC_Ignore`, and prove no `MultiUserChest` assembly
+      reference survives.
+- [ ] Then, and only then, diagnose the known issue: the hand-over branch calls
+      `ForceSendZDO` + `ZDO.SetOwner` but never moves the in-use state, and the in-use branch answers
+      `true` without any hand-over at all (`ContainerPatch.cs:44-59` upstream).
+- [x] Licensing and docs: MIT notice and attribution in the repo and in the mod's credits, plus a
+      divergence register naming every file we deviate from.
+
+## Where the absorption landed (2026-11-27)
+
+- 41 upstream files under `CraftFromDrawersAndChests\Chest\` (43 types), namespace `…Chest` / `…Chest.Patches`,
+  with `Chest\README.md` holding the file map and the divergence register.
+- `Plugin.cs`: the hard MultiUserChest dependency became `[BepInIncompatibility]`; upstream's three
+  quick-move incompatibilities carried over; `ChestPatches.InitialiseLogging(Log, () => Flags.IsDebug)`
+  runs before `PatchAll`, `ChestPatches.ApplyCompatPatches(Harmony)` after it.
+- csproj: the MultiUserChest `<Reference>` and its net472 `AddMultiUserChestReference` workaround are gone
+  (the MSB3274 warning with them); all 41 files are listed explicitly because the project does not glob.
+- Build verified: `BUILD OK - 2.0.0`, 340/340 tests, no `MultiUserChest` assembly reference in the built
+  DLL, and `MUC_RequestItemMove`/`MUC_Ignore`/the incompatibility GUID all present in the bytes.
+- `Test-PatchTargets.ps1` now reads 46 patch classes, 43 PASS. The 3 non-PASS are conditional by design
+  and are **not** regressions: `ItemDrawerCompat.UpdateItemOfDrawer` and
+  `ItemDrawerCompat.CloneItemBeforeAssignmentTranspiler` target `"DrawerContainer, itemdrawers"` and are
+  applied only when that mod is loaded, and `QuickStackPatch.QuickStackPatchTranspiler` targets
+  `"QuickStack.QuickStackPlugin, QuickStack"` and upstream never applies it. The script has no
+  "soft dependency" concept, so it reports them as failures; worth teaching it a SKIP state.
+- Diagnostics now available in a normal Release build: the whole upstream trace set (package dumps, block
+  traces, round-trip timings) plus `[chest] open request: requester=… player=… localUid=… zdoOwner=…
+  instanceIsOwner=… ignored=… hasAccess=… inUse=… wagonInUse=… requesterIsLocal=… => <branch>`.
+- Still open: the fix itself. The in-use branch still grants the open without hand-over.
+
+## Jötunn 2.30.3 bump (2.0.1, 2026-11-28)
+
+- Verified before changing anything: the 2.30.2 → 2.30.3 assembly diff is **3 lines, all private**
+  (`PrefabManager.RegisterTerrainOp` gained an `ObjectDB` argument; `SynchronizationManager` gained a private
+  `Menu_IsActive` patch for the config-window mouse-capture fix). Assembly identity and all 26 references
+  unchanged; the XML docs are byte-identical in size.
+- Every Jotunn symbol the mod binds is unchanged: `Main.ModGuid`, `NetworkCompatibility` +
+  `CompatibilityLevel.EveryoneMustHaveMod` + `VersionStrictness.Patch`, `SynchronizationMode` +
+  `AdminOnlyStrictness.Always`, `PrefabManager.Cache.GetPrefab<T>(string)` (used by the absorbed chest
+  layer), `ConfigurationManagerAttributes.IsAdminOnly`.
+- Bumped `packages.config`, the csproj `HintPath`, `manifest.json` (dependency **and** version), `README`,
+  `REFERENCES.md`, `CHANGELOG` → **2.0.1**. Verified on the artifact: the packaged DLL references
+  `Jotunn 2.30.3.0` and the packaged manifest pins `ValheimModding-Jotunn-2.30.3`.
+- 340/340 tests; `Test-PatchTargets` unchanged at 43 PASS + the same 3 conditional classes; package
+  `CraftFromDrawersAndChests-2.0.1.zip` (105,678 B, `sha256:E35952C9…`), no forced-debug banner.
+- Not committed: the branch and the commit are the owner's.
+
+## 2.1.0 — custody fix for the 2026-11-28 report (branch `MultiUserChestMerge`)
+
+- Root cause (log-proven, see the 2.1.0 changelog): a chest owned by another player is excluded from the
+  availability arithmetic (`ChestTake.CanServeSynchronously` = `!hasOwner || isOwner`, used at
+  `CraftPatches`, `PullKeyPatches` and `PullEngine`), and the absorbed layer handed ownership to every
+  requester that was not holding the container open. Opening a chest therefore changed who could count it.
+- Ruling taken: **stop a second opener stealing ownership.** `ChestOpenRules.Decide` now decides on
+  custody — `ZDO.GetOwner() != 0` — instead of the in-use flag: a claimed container keeps its owner
+  (`GrantInUse`), and only an unclaimed one is handed over (`HandOver`). `IsInUse` survives only as a
+  diagnostic field, and the `[chest]` line now prints `claimed=`, `zdoOwner=`, `inUseByOther=`.
+- Accepted trade (documented in the changelog and README): a non-owner can open a claimed chest and move
+  items (routed to the owner) but does not count it in their own crafting arithmetic until ownership is
+  released.
+- Verified: 339/339 tests (the decision table was rewritten to the new rule), `BUILD OK - 2.1.0`,
+  `Test-PatchTargets` unchanged at 43 PASS + the same 3 conditional classes, package 2.1.0 (106,706 B) and a
+  forced-debug 2.1.0 (106,830 B) for the two-player retest, with the release package rebuilt clean after it.
+- Owed: an in-game two-player pass. Expected from the same scenario: B opening A's chest logs
+  `claimed=True … => GrantInUse`, A keeps `storage 157`, and no more `ForceSendZDO`/revision churn on open.

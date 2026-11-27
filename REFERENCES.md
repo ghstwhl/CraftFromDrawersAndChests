@@ -83,8 +83,8 @@ assembly — as `Patches/VanillaChestSource.cs`, `Patches/PullKeyPatches.cs` and
 |---|---|---|---|
 | **BepInEx 5** | pack `5.4.2351` (pack `5.4.2350` also works) | `denikson-BepInExPack_Valheim`; copied into `.references\BepInEx\5.4.2350\BepInEx\core\` | Plugin base, `ConfigFile`/`ConfigEntry`, logging |
 | **HarmonyX** | `2.9.0` (`0Harmony.dll`) | shipped with the BepInEx pack | Runtime patches |
-| **Jötunn** | 2.30.2 | NuGet package `JotunnLib` 2.30.2 (`packages.config`); <https://www.nuget.org/packages/JotunnLib> | Mod framework: `SynchronizationManager` (server-synced config), `NetworkCompatibility`, config helpers |
-| **MultiUserChest** | 0.6.2 | the installed mod set (`MSchmoecker-MultiUserChest`), staged into `.references\Mods\` | The only supported chest read/removal path (`ContainerHandler.RemoveItemFromChest`), so two players can use one chest at once |
+| **Jötunn** | 2.30.3 | NuGet package `JotunnLib` 2.30.3 (`packages.config`); <https://www.nuget.org/packages/JotunnLib> | Mod framework: `SynchronizationManager` (server-synced config), `NetworkCompatibility`, config helpers |
+| **MultiUserChest** | 0.6.2 | **absorbed as source** under `CraftFromDrawersAndChests\Chest\` (upstream clone: `..\No-Chest-Block-Original`), MIT | The chest read/removal path (`ContainerHandler.RemoveItemFromChest`), so two players can use one chest at once. No longer referenced as an assembly: 2.0.0 compiles it in and declares the plugin an incompatibility. |
 | **KG Item Drawers** (`kg_ItemDrawers`) | 1.4.0 | installed mod set — **not** referenced at compile time | Reached by reflection at runtime; a **soft** dependency (the mod runs chest-only without it) |
 | **Microsoft.NETFramework.ReferenceAssemblies** (+ `.net462`) | 1.0.3 | NuGet (`packages.config`) | Compiling against .NET Framework 4.6.2 without a machine-wide targeting pack |
 | **AssemblyPublicizer** (CabbageCrow) — <https://github.com/CabbageCrow/AssemblyPublicizer> | cached at `tools\.cache\publicizer\AssemblyPublicizer\AssemblyPublicizer.exe` | Publicizing the four game assemblies; driven by `tools/New-ValheimRefs.ps1` |
@@ -107,7 +107,7 @@ the current pack.
 |---|---|
 | **CraftFromContainers** (aedenthorn) — 4.0.7 | The behavioural baseline this mod ports; public domain. Declared a `[BepInIncompatibility]` and must be removed before installing. |
 | **AzuCraftyBoxes** (Azumatt) — 1.8.27 | Reference for the storage abstraction and the toggle; MIT-0. Declared a `[BepInIncompatibility]` and must be removed before installing. |
-| **MultiUserChest** (MSchmoecker) | A hard dependency; see §3. |
+| **MultiUserChest** (MSchmoecker) | Absorbed into `Chest/` since 2.0.0 under the MIT licence (`LICENSE-MULTIUSERCHEST.txt`); the plugin itself is now an incompatibility, not a dependency. |
 
 ## 5. Licence notes
 

@@ -104,12 +104,12 @@
     </Reference>
     <!-- Jotunn (NuGet, restored by tools/Build.ps1 into <repo>\packages) -->
     <Reference Include="Jotunn">
-      <HintPath>..\packages\JotunnLib.2.30.2\lib\net462\Jotunn.dll</HintPath>
+      <HintPath>..\packages\JotunnLib.2.30.3\lib\net462\Jotunn.dll</HintPath>
     </Reference>
-    <!-- MultiUserChest: the only supported chest-removal path -->
-    <Reference Include="MultiUserChest">
-      <HintPath>$(ReferencesRoot)\Mods\MultiUserChest.dll</HintPath>
-    </Reference>
+    <!--
+      MultiUserChest is no longer referenced as an assembly: its source now compiles into this one
+      under Chest\ (MIT, absorbed 2026-11-27). The mod itself is declared an incompatibility.
+    -->
     <!-- .NET Framework -->
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System" />
@@ -123,9 +123,57 @@
     <Compile Include="Plugin.cs" />
     <Compile Include="PluginConfig.cs" />
     <Compile Include="MultiUserChestBridge.cs" />
+    <!--
+      The absorbed MultiUserChest 0.6.2 layer (MIT). This project is a legacy non-SDK csproj, so it
+      does not glob: every file below is listed deliberately. Keep the order matching upstream so a
+      future diff against MultiUserChest stays readable.
+    -->
+    <Compile Include="Chest\ChestPatches.cs" />
+    <Compile Include="Chest\CodeMatcherExtensions.cs" />
+    <Compile Include="Chest\Compatibility.cs" />
+    <Compile Include="Chest\ContainerExtend.cs" />
+    <Compile Include="Chest\ContainerHandler.cs" />
+    <Compile Include="Chest\ContainerRPCHandler.cs" />
+    <Compile Include="Chest\HumanoidExtend.cs" />
+    <Compile Include="Chest\InventoryBlock.cs" />
+    <Compile Include="Chest\InventoryHandler.cs" />
+    <Compile Include="Chest\InventoryOwner.cs" />
+    <Compile Include="Chest\InventoryPreview.cs" />
+    <Compile Include="Chest\PackageHandler.cs" />
+    <Compile Include="Chest\Data\IPackage.cs" />
+    <Compile Include="Chest\Data\IRequest.cs" />
+    <Compile Include="Chest\Data\IResponse.cs" />
+    <Compile Include="Chest\Data\RequestChestAdd.cs" />
+    <Compile Include="Chest\Data\RequestChestAddResponse.cs" />
+    <Compile Include="Chest\Data\RequestChestRemove.cs" />
+    <Compile Include="Chest\Data\RequestChestRemoveResponse.cs" />
+    <Compile Include="Chest\Data\RequestConsume.cs" />
+    <Compile Include="Chest\Data\RequestConsumeResponse.cs" />
+    <Compile Include="Chest\Data\RequestDrop.cs" />
+    <Compile Include="Chest\Data\RequestDropResponse.cs" />
+    <Compile Include="Chest\Data\RequestMove.cs" />
+    <Compile Include="Chest\Data\RequestMoveResponse.cs" />
+    <Compile Include="Chest\Data\SlotPreview.cs" />
+    <Compile Include="Chest\Helper\ConditionalWeakTableExtension.cs" />
+    <Compile Include="Chest\Helper\InventoryHelper.cs" />
+    <Compile Include="Chest\Helper\Log.cs" />
+    <Compile Include="Chest\Helper\ReflectionHelper.cs" />
+    <Compile Include="Chest\Helper\Timer.cs" />
+    <Compile Include="Chest\Patches\ContainerPatch.cs" />
+    <Compile Include="Chest\Patches\GamePatches.cs" />
+    <Compile Include="Chest\Patches\HumanoidPatch.cs" />
+    <Compile Include="Chest\Patches\InventoryGuiPatch.cs" />
+    <Compile Include="Chest\Patches\InventoryPatch.cs" />
+    <Compile Include="Chest\Patches\PickupPatch.cs" />
+    <Compile Include="Chest\Patches\Compatibility\InventoryIgnore.cs" />
+    <Compile Include="Chest\Patches\Compatibility\ItemDrawerCompat.cs" />
+    <Compile Include="Chest\Patches\Compatibility\OdinShip.cs" />
+    <Compile Include="Chest\Patches\Compatibility\QuickStackPatch.cs" />
     <Compile Include="Logic\BuildPullRules.cs" />
     <Compile Include="Logic\AvailabilityHint.cs" />
     <Compile Include="Logic\ChestTake.cs" />
+    <Compile Include="Logic\CraftPaymentRules.cs" />
+    <Compile Include="Logic\ChestOpenRules.cs" />
     <Compile Include="Logic\ChestTypeRules.cs" />
     <Compile Include="Logic\ConfigModel.cs" />
     <Compile Include="Logic\ConsoleCommandRules.cs" />
@@ -168,36 +216,10 @@
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 
   <!--
-    MultiUserChest ships built for .NET Framework 4.7.2 while this project targets 4.6.2, so
-    ResolveAssemblyReference refuses to resolve it (warning MSB3274) and drops it from the
-    compiler's reference set; without it `using MultiUserChest;` would not compile. MSB3274 is a
-    deliberate signal and is left unsuppressed, so instead of changing the target framework or
-    suppressing the warning, the already-staged DLL is added straight back to the compiler's
-    reference list just before CoreCompile.
-
-    Both items are needed. The Roslyn Csc task reads @(ReferencePathWithRefAssemblies), which is
-    snapshotted from @(ReferencePath) by FindReferenceAssembliesForReferences. That target is a
-    dependency of ResolveReferences and has already run by the time this target fires, so appending
-    to @(ReferencePath) alone never reaches the compiler. Adding to the snapshot item as well is
-    what actually lands the DLL in the csc command line; @(ReferencePath) is kept so the reference
-    is still visible to anything that inspects the resolved set.
-
-    Private=false on purpose: at runtime BepInEx loads the real MultiUserChest plugin, so the
-    reference is compile-time only and must not be copied next to this assembly.
+    The MultiUserChest assembly is no longer referenced: its source is compiled into this project
+    (see the Chest\ entries above), so the net472-vs-net462 reference workaround that used to live
+    here has been removed with it. The MSB3274 warning that motivated it is gone too.
   -->
-  <Target Name="AddMultiUserChestReference"
-          DependsOnTargets="ResolveAssemblyReferences"
-          BeforeTargets="CoreCompile"
-          Condition="Exists('$(ReferencesRoot)\Mods\MultiUserChest.dll')">
-    <ItemGroup>
-      <ReferencePath Include="$(ReferencesRoot)\Mods\MultiUserChest.dll">
-        <Private>false</Private>
-      </ReferencePath>
-      <ReferencePathWithRefAssemblies Include="$(ReferencesRoot)\Mods\MultiUserChest.dll">
-        <Private>false</Private>
-      </ReferencePathWithRefAssemblies>
-    </ItemGroup>
-  </Target>
   <!-- .NET Framework 4.6.2 reference assemblies from NuGet, so no machine-wide targeting pack is required. -->
   <Import Project="..\packages\Microsoft.NETFramework.ReferenceAssemblies.net462.1.0.3\build\Microsoft.NETFramework.ReferenceAssemblies.net462.targets" Condition="Exists('..\packages\Microsoft.NETFramework.ReferenceAssemblies.net462.1.0.3\build\Microsoft.NETFramework.ReferenceAssemblies.net462.targets')" />
   <!--
@@ -231,11 +253,13 @@
 
   <!-- Release: assemble the Thunderstore package under
        $(ReleaseRoot)\$(PackageFolder)\ -> plugins\<AssemblyName>.dll (+ Translations\) and the staged
-       root docs (LICENSE.md, manifest.json, CHANGELOG.md, README.md, icon.png). -->
+       root docs (LICENSE.md, LICENSE-MULTIUSERCHEST.txt, manifest.json, CHANGELOG.md, README.md, icon.png). -->
   <Target Name="Copy" AfterTargets="Build" Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <ItemGroup>
       <TranslationFiles Include="$(MSBuildProjectDirectory)\Translations\**\*.*" />
       <PackageDocs Include="$(ModRoot)\$(ProjectName)\LICENSE.md"   Condition="Exists('$(ModRoot)\$(ProjectName)\LICENSE.md')" />
+      <!-- The absorbed chest layer is MIT: its copyright and permission text must travel with the build. -->
+      <PackageDocs Include="$(ModRoot)\$(ProjectName)\LICENSE-MULTIUSERCHEST.txt" Condition="Exists('$(ModRoot)\$(ProjectName)\LICENSE-MULTIUSERCHEST.txt')" />
       <PackageDocs Include="$(ModRoot)\$(ProjectName)\manifest.json" Condition="Exists('$(ModRoot)\$(ProjectName)\manifest.json')" />
       <PackageDocs Include="$(ModRoot)\$(ProjectName)\CHANGELOG.md"  Condition="Exists('$(ModRoot)\$(ProjectName)\CHANGELOG.md')" />
       <PackageDocs Include="$(ModRoot)\$(ProjectName)\README.md"    Condition="Exists('$(ModRoot)\$(ProjectName)\README.md')" />

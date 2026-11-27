@@ -4,6 +4,138 @@ All notable changes to this mod are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2026-11-28
+
+### Fixed
+
+- **The held-craft message named no items.** It read the plan's *infeasible* item list, which is by definition
+  empty for the lines it was describing — those are lines storage **can** supply, just not synchronously — so
+  the log said `Holding the craft of '$item_bakedpoteitr_uncooked' until  arrive from another player's chest.`
+  It now names the routed lines, localised: `… until Seal blubber arrive from another player's chest.` Same fix
+  on the placement message.
+
+### Changed
+
+- **The MultiUserChest incompatibility is now stated up front** in the README and the package description:
+  MultiUserChest's chest-sharing code is built into this mod, so the original plugin must be removed — BepInEx
+  refuses to load this mod while it is installed. The reason is given too: the code is in-tree so its decisions
+  (who owns a chest, which branch answered an open, what a pull did) can be logged with this mod's own Debug
+  switch and fixed here, instead of being observable only through another plugin's compile-time debug build.
+
+## [2.2.0] - 2026-11-28
+
+### Fixed
+
+- **Both players can craft and build from the same chest, whoever opened it last.** 2.1.0 only stopped the
+  chest changing hands, which still left exactly one player able to use it. Two things had to change:
+
+  1. **The planner no longer skips a chest another player owns.** `PullEngine.BuildStocks` used to drop such
+     a source before a plan was built, so the crafting panel, the build panel and the pull itself could not
+     see it. It is now planned against like any other storage. The two diagnostic sums that applied the same
+     filter to satisfy the readout were relaxed with it, so the log and the panel agree.
+
+  2. **A craft whose cost comes from that chest is held until the items arrive.** A removal from a chest
+     another player owns is routed: `ContainerHandler.RemoveItemFromChest` sends `MUC_RequestItemRemove` and
+     returns, and the items only reach the player's inventory with the response — what the player sees
+     meanwhile is a display-only `SlotPreview`. Vanilla creates the crafted item and consumes the materials
+     inside the same `InventoryGui.DoCrafting` call, so letting it run would consume less than the recipe
+     costs. The craft is therefore suppressed, the materials are fetched, and the craft completes on the first
+     frame the whole cost is in the inventory (`CraftPaymentRules`, `CraftPatches.DoCraftingPrefix` +
+     `TickPendingCraft`). Placements behave the same way: the press fetches and does not place.
+
+  **Nothing is ever crafted unpaid.** If the routed delivery does not arrive within
+  `CraftPaymentRules.PendingTimeoutSeconds` (3 s) the hold is abandoned with a warning and nothing is crafted;
+  `ConsumeResources` has a backstop that refuses to eat when part of the cost is still in flight. That is
+  deliberately the slower of the two possible designs: the alternative — craft now, consume the delivery when
+  it lands — hands out a free craft whenever the routed request is refused, and this mod's top rule is that a
+  craft must never cost nothing.
+
+- Ownership is still stable: the 2.1.0 custody rule stays, so a chest no longer changes hands when someone
+  else opens it, and this release only changes what a non-owner may *count* and *take*.
+
+## [2.1.0] - 2026-11-28
+
+### Fixed
+
+- **Opening a chest no longer takes it out of the other player's crafting.** A container a player has
+  claimed now keeps that owner; only a container nobody has claimed — the server acting as custodian, its
+  ZDO owner still zero — is handed to whoever opens it.
+
+  **Root cause**, from a two-player capture on 2.0.1 (`[chest]` and storage lines are this mod's own):
+  the availability arithmetic counts a chest only when nobody owns it or **this** client owns it
+  (`ChestTake.CanServeSynchronously`: `!hasOwner || isOwner`, applied at `CraftPatches`, `PullKeyPatches`
+  and the pull planner), while the absorbed chest layer moved ownership to **every** requester that was not
+  currently holding the container open. So player A's `Readout 'SealBlubber' … storage 157` (log line 2561)
+  became `storage 0` at line 3186 — one line after the hand-over at 3185 and the
+  `owner -544062696, weAreOwner False` report at 3189 — while the same readout still listed the chest at
+  `count=157`, proving the contents were intact and only the gate had changed. It flapped back to 157
+  whenever ownership came back (line 3284) and to 0 again on the next hand-over (3288). No items were lost
+  at any point.
+
+- A second consequence of the same change: opening a chest someone else owns no longer triggers
+  `ForceSendZDO` + `ZDO.SetOwner`, so the ZDO stops being re-sent (and re-loaded item by item) on every
+  open.
+
+### Behaviour to be aware of
+
+- **One player owns a chest; everyone else can use it but not count it.** The owner (whoever claimed it
+  first, i.e. opened it while it was unclaimed) has it counted in their crafting and building panels. Any
+  other player can still open it, take from it and put things in — those moves are routed to the owner by
+  the chest layer — but this mod's own crafting/building arithmetic will not use that chest for them until
+  it is released (the owner logging off, or ownership returning to the server). This is the deliberate
+  trade of this fix: before it, the chest switched owner on every open, so whoever opened it last could
+  craft and everyone else could not.
+
+## [2.0.1] - 2026-11-28
+
+### Changed
+
+- **Built against Jötunn 2.30.3** (up from 2.30.2). No behaviour change: the two assemblies differ by
+  **three members in the whole public-facing dump, all of them private** — `PrefabManager.RegisterTerrainOp`
+  gained an `ObjectDB` parameter (it is internal to Jötunn) and `SynchronizationManager` gained a private
+  `Menu_IsActive` patch (the configuration-window mouse-capture fix). Every Jötunn symbol this mod binds is
+  unchanged and resolves identically: `Main.ModGuid`, `NetworkCompatibility` /
+  `CompatibilityLevel.EveryoneMustHaveMod` / `VersionStrictness.Patch`, `SynchronizationMode` /
+  `AdminOnlyStrictness.Always`, `PrefabManager.Cache.GetPrefab<T>(string)` and
+  `ConfigurationManagerAttributes.IsAdminOnly`. The assembly references the same 26 assemblies.
+- The package manifest now pins `ValheimModding-Jotunn-2.30.3`, so installing this mod no longer drags a
+  2.30.2 copy into a profile that already runs 2.30.3.
+
+## [2.0.0] - 2026-11-27
+
+**Upgrading requires removing MultiUserChest.** Its chest-concurrency layer is now part of this mod, so
+the two cannot be installed together: BepInEx will refuse to load this mod while MultiUserChest is
+present. Every player and the server must update together, as always.
+
+### Changed
+
+- **MultiUserChest's code is now compiled into this mod** (`Chest/`, absorbed from MultiUserChest 0.6.2,
+  MIT — see [LICENSE-MULTIUSERCHEST.txt](LICENSE-MULTIUSERCHEST.txt)). It was previously a required
+  dependency and the only sanctioned way this mod removed items from a chest. Owning it means the chest
+  layer's decisions can be logged with this mod's own switch and fixed here, instead of being a black box
+  behind another plugin's compile-time debug build.
+- **The chest layer's verbose logging now follows this mod's `Debug` setting at runtime.** Upstream gated
+  every package dump, block trace and round-trip timing on a compile-time `DEBUG` symbol, so a published
+  build could only ever be silent — and upstream's own changelog notes that its debug build slowed the mod
+  down noticeably. The same call sites are now gated on the runtime flag and write at Info level, so they
+  reach `LogOutput.log` when `Debug` is on and cost nothing when it is off.
+- **Two warnings that upstream compiled out of Release builds are always on**: an incoming chest request
+  that reaches a peer which is not the container's owner, or whose container instance cannot be found.
+  Those are exactly the events that precede a stuck chest.
+- **The container-open decision is now a tested rule with a diagnostic line.** Which of the four branches
+  answers an open request — vanilla, refuse, grant-while-in-use, hand over — is chosen by
+  `Logic/ChestOpenRules`, with a table test per branch, and every request logs its inputs when `Debug` is
+  on: requester, player id, local uid, ZDO owner, whether the instance is the owner, access, `inUse`,
+  wagon-in-use, and the branch taken.
+- Built against **Valheim 1.0.31** (the hotfix is a three-member API delta, none of it used here).
+
+### Known issues
+
+- **Chest locking can still leave a container open without handing over ownership.** The branch that
+  answers an in-use request grants the open without moving ownership (`GrantInUse` in `ChestOpenRules`),
+  and the hand-over branch pushes the current data before `SetOwner`. That behaviour is now inside this
+  mod and observable from a normal build, which is the point of this release; the fix is not in it.
+
 ## [1.0.24] - 2026-11-27 (test build, not released)
 
 ### Changed

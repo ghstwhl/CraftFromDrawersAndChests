@@ -207,6 +207,8 @@ namespace CraftFromDrawersAndChests.Patches
 
             // CraftFromContainers' one guard line (1102): the mod is on, the prevent gate allows, the
             // pull key is held, the player is placing, input is live, and the piece picker is closed.
+            // When that gate refuses this is not a pull, but the placement may still have to be held so a
+            // cost served by another player's chest cannot be placed before it is paid (2.2.0).
             if (!BuildPullRules.ShouldIntercept(
                     flags.ModEnabled,
                     KeyHeld(flags.PullItemsKey),
@@ -215,7 +217,8 @@ namespace CraftFromDrawersAndChests.Patches
                     __instance.InPlaceMode(),
                     takeInput,
                     Hud.IsPieceSelectionVisible()))
-                return true;
+                return CraftPatches.HoldPlacementForFetch(
+                    __instance, takeInput, ___m_buildPieces, ___m_placementGhost);
 
             // The trigger — an attack press, or the gamepad place button (CFC 1106).
             if (!ZInput.GetButtonDown("Attack") && !ZInput.GetButtonDown("JoyPlace"))
@@ -320,7 +323,7 @@ namespace CraftFromDrawersAndChests.Patches
                 for (int i = 0; i < sources.Count; i++)
                 {
                     IStorageSource source = sources[i];
-                    if (source == null || !source.IsValid || !PullEngine.CanServeSynchronously(source))
+                    if (source == null || !source.IsValid)
                         continue;
 
                     fromStorage += source.Count(prefab);
@@ -533,6 +536,10 @@ namespace CraftFromDrawersAndChests.Patches
         [HarmonyPrefix]
         private static void InventoryGuiUpdatePrefix(InventoryGui __instance, Animator ___m_animator)
         {
+            // A craft held for a routed delivery completes here, on the first frame the materials are in
+            // the inventory (or is abandoned after the timeout).
+            CraftPatches.TickPendingCraft();
+
             bool allowed = AllowByKey();
             bool changed = allowed != lastAllowed;
             lastAllowed = allowed;
